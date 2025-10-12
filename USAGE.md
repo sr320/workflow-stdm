@@ -28,6 +28,27 @@ pip install -e .
 
 ## Quick Start Example
 
+### Option 1: Use Provided Test Data (Recommended)
+
+The repository includes ready-to-use test datasets in the `input-data/` directory:
+
+```bash
+# Run workflow with default test data (10k genes, 3 species, 4 time points)
+stdm run --rank 5 --method parafac --output results/
+
+# Use the smaller test dataset for quick testing (1k genes)
+stdm run --input gene_expression_data_small.csv --rank 5 --output results_small/
+
+# Try Tucker decomposition
+stdm run --method tucker --rank 5 --output results_tucker/
+```
+
+**Available test datasets:**
+- `gene_expression_data.csv` - Full dataset (10,000 genes × 3 species × 4 time points)
+- `gene_expression_data_small.csv` - Small dataset (1,000 genes × 3 species × 4 time points)
+
+### Option 2: Generate Your Own Synthetic Data
+
 ### 1. Generate Test Data
 
 Generate synthetic gene expression data with the exact specifications (10k genes, 3 species, 4 time points):

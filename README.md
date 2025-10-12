@@ -47,6 +47,20 @@ pip install -e .
 
 ## Quick Start
 
+### Option 1: Use Provided Test Data (Recommended)
+
+The repository includes test datasets in the `input-data/` directory. Simply run:
+
+```bash
+# Run workflow with default test data (10k genes, 3 species, 4 time points)
+stdm run --rank 5 --method parafac
+
+# Or use the smaller test dataset for quick testing
+stdm run --input gene_expression_data_small.csv --rank 5 --method parafac
+```
+
+### Option 2: Generate and Use Synthetic Data
+
 ### 1. Generate Synthetic Data
 
 ```bash
@@ -69,7 +83,33 @@ stdm decompose --input data.csv --output results/ --rank 5 --method parafac
 
 ### Command-Line Interface
 
-The package provides three main commands:
+The package provides four main commands:
+
+#### Run Complete Workflow (Recommended)
+
+Use test data from `input-data/` directory:
+
+```bash
+stdm run [OPTIONS]
+
+Options:
+  -i, --input PATH              Input CSV file (default: gene_expression_data.csv from input-data/)
+  -o, --output PATH             Output directory (default: results)
+  -r, --rank INT               Decomposition rank (default: 5)
+  -m, --method {parafac,tucker} Decomposition method (default: parafac)
+  --sparsity-threshold FLOAT   Sparsity threshold (default: 0.01)
+  --normalize                  Normalize tensor
+  --log-transform              Apply log2(x+1) transformation (default: True)
+  --no-log-transform           Skip log transformation
+  --standardize                Standardize gene expression (default: True)
+  --no-standardize             Skip standardization
+  -v, --verbose                Verbose output
+
+# Examples:
+stdm run                                      # Use default test data
+stdm run --input gene_expression_data_small.csv  # Use small test data
+stdm run --method tucker --rank 10           # Tucker with rank 10
+```
 
 #### Generate Synthetic Data
 
