@@ -46,8 +46,69 @@ stdm run --method tucker --rank 5 --output results_tucker/
 **Available test datasets:**
 - `gene_expression_data.csv` - Full dataset (10,000 genes × 3 species × 4 time points)
 - `gene_expression_data_small.csv` - Small dataset (1,000 genes × 3 species × 4 time points)
+- `vst_counts_matrix.csv` - Real RNA-seq data (large dataset)
 
-### Option 2: Generate Your Own Synthetic Data
+**New Feature: Auto-timestamping**
+
+Each run automatically creates a timestamped subdirectory, so you can run the workflow multiple times without overwriting previous results:
+
+```bash
+# First run
+stdm run --rank 5 --output results/
+# Creates: results/20251012_143022/
+
+# Second run (different parameters)
+stdm run --rank 10 --output results/
+# Creates: results/20251012_175729/
+
+# All previous results are preserved!
+```
+
+**New Feature: Comprehensive README Report**
+
+Every run generates a detailed `README.md` file in the output directory with:
+- Run configuration and timestamp
+- Input data summary and statistics
+- Quality assessment and reconstruction error interpretation
+- Parameter recommendations based on results
+- Detailed descriptions of all output files
+- Python code examples for loading and analyzing results
+- Biological interpretation guidelines
+
+### Option 2: Use Your Own Data
+
+You can easily analyze your own gene expression data:
+
+```bash
+# Use data from input-data directory
+stdm run --input my_data.csv --output my_results/
+
+# Use data from any path
+stdm run --input /path/to/my/data.csv --output /path/to/results/
+
+# Use absolute path
+stdm run --input ~/research/gene_expression.csv --output ~/results/analysis1/
+```
+
+**Required Data Format:**
+
+Your CSV file must follow this structure:
+```csv
+gene,species,timepoint,expression
+gene1,species1,t0,0.5
+gene1,species1,t1,0.7
+gene1,species2,t0,0.3
+gene1,species2,t1,0.8
+...
+```
+
+**Tips for Custom Data:**
+- Column names must be: `gene`, `species`, `timepoint`, `expression`
+- Expression values should be non-negative (counts or normalized values)
+- The workflow will automatically determine the dimensions (# genes, species, timepoints)
+- Missing combinations of gene/species/timepoint will be treated as zeros
+
+### Option 3: Generate Your Own Synthetic Data
 
 ### 1. Generate Test Data
 
@@ -111,16 +172,41 @@ stdm decompose \
 
 ## Understanding the Output
 
-After running decomposition, you'll find the following files in the output directory:
+### Output Directory Structure
 
-- **gene_factors.npy**: Gene factor matrix (10000 × rank)
+After running decomposition, each run creates a timestamped directory with the following structure:
+
+```
+results/
+└── 20251012_175729/  # Timestamped directory
+    ├── README.md                  # Comprehensive analysis report (NEW!)
+    ├── gene_factors.npy
+    ├── species_factors.npy
+    ├── time_factors.npy
+    ├── reconstructed_tensor.npy
+    └── summary.json
+```
+
+### Output Files
+
+- **README.md**: **NEW!** Comprehensive analysis report that includes:
+  - Run configuration and timestamp
+  - Input data summary (shape, sparsity, statistics)
+  - Quality assessment of the decomposition
+  - **Optimal parameter recommendations** based on reconstruction error
+  - Detailed descriptions of all output files
+  - Python code examples for loading and analyzing results
+  - Biological interpretation guidelines
+  - **This is your first stop for understanding the results!**
+
+- **gene_factors.npy**: Gene factor matrix (n_genes × rank)
   - Each row represents a gene's loading on each component
   - Higher absolute values indicate stronger association with that component
 
-- **species_factors.npy**: Species factor matrix (3 × rank)
+- **species_factors.npy**: Species factor matrix (n_species × rank)
   - Shows how each species contributes to each component
 
-- **time_factors.npy**: Time point factor matrix (4 × rank)
+- **time_factors.npy**: Time point factor matrix (n_timepoints × rank)
   - Shows temporal patterns for each component
 
 - **reconstructed_tensor.npy**: Reconstructed tensor from the decomposition
@@ -129,6 +215,26 @@ After running decomposition, you'll find the following files in the output direc
 - **summary.json**: Decomposition statistics
   - Includes reconstruction error (lower is better)
   - Factor shapes for verification
+
+### Reading the Analysis Report
+
+The automatically generated `README.md` in each results directory provides:
+
+1. **Quality Assessment**: Interpretation of reconstruction error
+   - Excellent (< 0.1): May be overfitting
+   - Good (0.1 - 0.3): Most variation captured
+   - Acceptable (0.3 - 0.5): Consider increasing rank
+   - Poor (> 0.5): Increase rank or check data quality
+
+2. **Parameter Recommendations**: Suggestions for:
+   - Rank adjustment (increase/decrease)
+   - Method selection (PARAFAC vs Tucker)
+
+3. **Code Examples**: Ready-to-use Python code for:
+   - Loading all result files
+   - Finding top genes for each component
+   - Visualizing temporal patterns
+   - Comparing original vs reconstructed data
 
 ## Python API Usage
 
