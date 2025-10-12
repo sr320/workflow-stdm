@@ -111,6 +111,43 @@ stdm run --input gene_expression_data_small.csv  # Use small test data
 stdm run --method tucker --rank 10           # Tucker with rank 10
 ```
 
+**New Features:**
+
+- **Auto-timestamping**: Each run automatically creates a timestamped subdirectory (e.g., `results/20251012_175729/`) so results are never overwritten
+- **Automatic README Report**: Every run generates a comprehensive `README.md` in the output directory that includes:
+  - Run timestamp and configuration
+  - Input data summary
+  - Output files description with usage examples
+  - Quality assessment and optimal parameter recommendations
+  - Python code examples for loading and analyzing results
+  - Biological interpretation guidelines
+
+**Using Your Own Data:**
+
+You can easily use your own gene expression data by providing the `--input` option:
+
+```bash
+# Use data from input-data directory
+stdm run --input my_custom_data.csv
+
+# Use data from any path
+stdm run --input /path/to/my/data.csv --output my_results
+
+# Use data from absolute path
+stdm run --input ~/research/gene_expression.csv --output ~/results/analysis1
+```
+
+**Data Format Requirements:**
+
+Your CSV file should be in the following format:
+```csv
+gene,species,timepoint,expression
+gene1,species1,t0,0.5
+gene1,species1,t1,0.7
+gene1,species2,t0,0.3
+...
+```
+
 #### Generate Synthetic Data
 
 ```bash
@@ -196,13 +233,39 @@ gene1,species2,t0,0.3
 
 ### Output Files
 
-The decomposition command generates:
+Each run generates a timestamped directory (e.g., `results/20251012_175729/`) containing:
 
 - `gene_factors.npy` - Gene factor matrix (n_genes × rank)
 - `species_factors.npy` - Species factor matrix (n_species × rank)
 - `time_factors.npy` - Time factor matrix (n_timepoints × rank)
 - `reconstructed_tensor.npy` - Reconstructed tensor
 - `summary.json` - Decomposition summary with reconstruction error
+- **`README.md`** - **Comprehensive analysis report** with:
+  - Run configuration and timestamp
+  - Input data statistics
+  - Quality assessment and parameter recommendations
+  - Detailed file descriptions
+  - Python code examples for result analysis
+  - Biological interpretation guidelines
+
+**Example directory structure after multiple runs:**
+```
+results/
+├── 20251012_143022/  # First run
+│   ├── README.md
+│   ├── gene_factors.npy
+│   ├── species_factors.npy
+│   ├── time_factors.npy
+│   ├── reconstructed_tensor.npy
+│   └── summary.json
+└── 20251012_175729/  # Second run
+    ├── README.md
+    ├── gene_factors.npy
+    ├── species_factors.npy
+    ├── time_factors.npy
+    ├── reconstructed_tensor.npy
+    └── summary.json
+```
 
 ## Methods
 
