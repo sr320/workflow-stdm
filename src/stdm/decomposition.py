@@ -104,9 +104,10 @@ class SparseTensorDecomposer:
         # Convert to tensorly format
         tl_tensor = tl.tensor(tensor)
         
+        # Use init='random' for better memory efficiency with large tensors
         # Perform PARAFAC decomposition
         factors = parafac(tl_tensor, rank=self.rank, n_iter_max=n_iter_max, 
-                         tol=tol, verbose=verbose)
+                         tol=tol, verbose=verbose, init='random')
         
         # Store factors
         self.factors_ = factors.factors
@@ -121,9 +122,10 @@ class SparseTensorDecomposer:
         # Define ranks for each mode
         ranks = [min(self.rank, s) for s in tensor.shape]
         
+        # Use init='random' for better memory efficiency
         # Perform Tucker decomposition
         core, factors = tucker(tl_tensor, rank=ranks, n_iter_max=n_iter_max, 
-                              tol=tol, verbose=verbose)
+                              tol=tol, verbose=verbose, init='random')
         
         # Store factors and core
         self.factors_ = factors
