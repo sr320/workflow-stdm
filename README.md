@@ -6,26 +6,26 @@ Sparse Tensor Decomposition for Multi-species gene expression data.
 
 This package provides a Python workflow for performing sparse tensor decomposition on gene expression data across multiple species and time points. It is optimized to handle:
 
-- **~10,000 genes**
-- **3 species**
-- **4 time points**
+-   **\~10,000 genes**
+-   **3 species**
+-   **4 time points**
 
 The workflow uses efficient tensor decomposition methods (PARAFAC/CP and Tucker) to identify patterns and factors in multi-dimensional gene expression data.
 
 ## Features
 
-- **Sparse tensor decomposition** using PARAFAC (CP) and Tucker methods
-- **Optimized for gene expression data** with automatic preprocessing
-- **Data loading utilities** for CSV-based gene expression datasets
-- **Synthetic data generation** for testing and validation
-- **Command-line interface** for easy workflow execution
-- **UV package manager** for fast, reliable dependency management
+-   **Sparse tensor decomposition** using PARAFAC (CP) and Tucker methods
+-   **Optimized for gene expression data** with automatic preprocessing
+-   **Data loading utilities** for CSV-based gene expression datasets
+-   **Synthetic data generation** for testing and validation
+-   **Command-line interface** for easy workflow execution
+-   **UV package manager** for fast, reliable dependency management
 
 ## Installation
 
 ### Using UV (Recommended)
 
-```bash
+``` bash
 # Clone the repository
 git clone https://github.com/sr320/workflow-stdm.git
 cd workflow-stdm
@@ -41,7 +41,7 @@ source .venv/bin/activate  # On Unix/macOS
 
 ### Using pip
 
-```bash
+``` bash
 pip install -e .
 ```
 
@@ -51,7 +51,7 @@ pip install -e .
 
 The repository includes test datasets in the `input-data/` directory. Simply run:
 
-```bash
+``` bash
 # Run workflow with default test data (10k genes, 3 species, 4 time points)
 stdm run --rank 5 --method parafac
 
@@ -63,19 +63,19 @@ stdm run --input gene_expression_data_small.csv --rank 5 --method parafac
 
 ### 1. Generate Synthetic Data
 
-```bash
+``` bash
 stdm generate --output data.csv --genes 10000 --species 3 --timepoints 4
 ```
 
 ### 2. View Data Information
 
-```bash
+``` bash
 stdm info --input data.csv
 ```
 
 ### 3. Perform Tensor Decomposition
 
-```bash
+``` bash
 stdm decompose --input data.csv --output results/ --rank 5 --method parafac
 ```
 
@@ -89,7 +89,7 @@ The package provides four main commands:
 
 Use test data from `input-data/` directory:
 
-```bash
+``` bash
 stdm run [OPTIONS]
 
 Options:
@@ -113,20 +113,20 @@ stdm run --method tucker --rank 10           # Tucker with rank 10
 
 **New Features:**
 
-- **Auto-timestamping**: Each run automatically creates a timestamped subdirectory (e.g., `results/20251012_175729/`) so results are never overwritten
-- **Automatic README Report**: Every run generates a comprehensive `README.md` in the output directory that includes:
-  - Run timestamp and configuration
-  - Input data summary
-  - Output files description with usage examples
-  - Quality assessment and optimal parameter recommendations
-  - Python code examples for loading and analyzing results
-  - Biological interpretation guidelines
+-   **Auto-timestamping**: Each run automatically creates a timestamped subdirectory (e.g., `results/20251012_175729/`) so results are never overwritten
+-   **Automatic README Report**: Every run generates a comprehensive `README.md` in the output directory that includes:
+    -   Run timestamp and configuration
+    -   Input data summary
+    -   Output files description with usage examples
+    -   Quality assessment and optimal parameter recommendations
+    -   Python code examples for loading and analyzing results
+    -   Biological interpretation guidelines
 
 **Using Your Own Data:**
 
 You can easily use your own gene expression data by providing the `--input` option:
 
-```bash
+``` bash
 # Use data from input-data directory
 stdm run --input my_custom_data.csv
 
@@ -140,7 +140,8 @@ stdm run --input ~/research/gene_expression.csv --output ~/results/analysis1
 **Data Format Requirements:**
 
 Your CSV file should be in the following format:
-```csv
+
+``` csv
 gene,species,timepoint,expression
 gene1,species1,t0,0.5
 gene1,species1,t1,0.7
@@ -150,7 +151,7 @@ gene1,species2,t0,0.3
 
 #### Generate Synthetic Data
 
-```bash
+``` bash
 stdm generate [OPTIONS]
 
 Options:
@@ -165,7 +166,7 @@ Options:
 
 #### Decompose Tensor
 
-```bash
+``` bash
 stdm decompose [OPTIONS]
 
 Options:
@@ -182,13 +183,13 @@ Options:
 
 #### Get Tensor Information
 
-```bash
+``` bash
 stdm info --input PATH
 ```
 
 ### Python API
 
-```python
+``` python
 from stdm import SparseTensorDecomposer, GeneExpressionLoader
 
 # Load or generate data
@@ -223,7 +224,7 @@ reconstructed = decomposer.reconstruct()
 
 The expected CSV format for gene expression data:
 
-```csv
+``` csv
 gene,species,timepoint,expression
 gene1,species1,t0,0.5
 gene1,species1,t1,0.7
@@ -235,21 +236,22 @@ gene1,species2,t0,0.3
 
 Each run generates a timestamped directory (e.g., `results/20251012_175729/`) containing:
 
-- `gene_factors.npy` - Gene factor matrix (n_genes × rank)
-- `species_factors.npy` - Species factor matrix (n_species × rank)
-- `time_factors.npy` - Time factor matrix (n_timepoints × rank)
-- `reconstructed_tensor.npy` - Reconstructed tensor
-- `summary.json` - Decomposition summary with reconstruction error
-- **`README.md`** - **Comprehensive analysis report** with:
-  - Run configuration and timestamp
-  - Input data statistics
-  - Quality assessment and parameter recommendations
-  - Detailed file descriptions
-  - Python code examples for result analysis
-  - Biological interpretation guidelines
+-   `gene_factors.npy` - Gene factor matrix (n_genes × rank)
+-   `species_factors.npy` - Species factor matrix (n_species × rank)
+-   `time_factors.npy` - Time factor matrix (n_timepoints × rank)
+-   `reconstructed_tensor.npy` - Reconstructed tensor
+-   `summary.json` - Decomposition summary with reconstruction error
+-   **`README.md`** - **Comprehensive analysis report** with:
+    -   Run configuration and timestamp
+    -   Input data statistics
+    -   Quality assessment and parameter recommendations
+    -   Detailed file descriptions
+    -   Python code examples for result analysis
+    -   Biological interpretation guidelines
 
 **Example directory structure after multiple runs:**
-```
+
+```         
 results/
 ├── 20251012_143022/  # First run
 │   ├── README.md
@@ -279,14 +281,14 @@ Tucker decomposition is a higher-order generalization of matrix SVD. It decompos
 
 ## Performance Considerations
 
-- **Sparsity**: The package automatically handles sparse tensors, setting values below the threshold to zero
-- **Normalization**: Tensor normalization improves numerical stability
-- **Rank selection**: Lower ranks are faster but may lose information; higher ranks capture more detail
-- **Memory**: With 10k genes, 3 species, and 4 timepoints, the tensor requires ~960 KB (double precision)
+-   **Sparsity**: The package automatically handles sparse tensors, setting values below the threshold to zero
+-   **Normalization**: Tensor normalization improves numerical stability
+-   **Rank selection**: Lower ranks are faster but may lose information; higher ranks capture more detail
+-   **Memory**: With 10k genes, 3 species, and 4 timepoints, the tensor requires \~960 KB (double precision)
 
 ## Development
 
-```bash
+``` bash
 # Install development dependencies
 uv sync
 
@@ -308,7 +310,7 @@ MIT License
 
 If you use this package in your research, please cite:
 
-```
+```         
 @software{workflow_stdm,
   title = {Sparse Tensor Decomposition for Multi-species Gene Expression},
   author = {Your Name},

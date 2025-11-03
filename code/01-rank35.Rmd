@@ -1,0 +1,48 @@
+---
+title: "01-rank35"
+output: html_document
+date: "2025-11-03"
+---
+
+
+```{bash}
+# Run workflow with default test data (10k genes, 3 species, 4 time points)
+stdm run --input ../input-data/gene_expression_data_small.csv --rank 35 --method parafac
+```
+
+
+```{bash}
+# Run workflow with default test data (10k genes, 3 species, 4 time points)
+stdm run --input ../input-data/gene_expression_data_small.csv --rank 35 --method tucker
+```
+
+```{python}
+import numpy as np
+import json
+
+# Load all results
+gene_factors = np.load('results/20251103_095651/gene_factors.npy')
+species_factors = np.load('results/20251103_095651/species_factors.npy')
+time_factors = np.load('results/20251103_095651/time_factors.npy')
+reconstructed = np.load('results/20251103_095651/reconstructed_tensor.npy')
+
+with open('summary.json') as f:
+    summary = json.load(f)
+
+print(f"Reconstruction error: {summary['reconstruction_error']:.6f}")
+
+# Example: Get top 20 genes for component 1
+component_idx = 0
+top_genes = np.argsort(np.abs(gene_factors[:, component_idx]))[-20:][::-1]
+print(f"Top 20 genes for component {component_idx + 1}: {top_genes}")
+
+# Example: Examine temporal pattern for a component
+import matplotlib.pyplot as plt
+plt.plot(time_factors[:, component_idx])
+plt.xlabel('Time Point')
+plt.ylabel('Factor Value')
+plt.title(f'Temporal Pattern - Component {component_idx + 1}')
+plt.show()
+```
+
+
