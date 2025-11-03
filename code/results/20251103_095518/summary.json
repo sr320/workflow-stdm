@@ -1,0 +1,17 @@
+{
+  "method": "parafac",
+  "rank": 35,
+  "reconstruction_error": 4.185968489968322e-13,
+  "gene_factors_shape": [
+    1000,
+    35
+  ],
+  "species_factors_shape": [
+    3,
+    35
+  ],
+  "time_factors_shape": [
+    4,
+    35
+  ]
+}

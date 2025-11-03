@@ -1,0 +1,22 @@
+{
+  "method": "tucker",
+  "rank": 35,
+  "reconstruction_error": 1.7653661925013066e-15,
+  "gene_factors_shape": [
+    1000,
+    35
+  ],
+  "species_factors_shape": [
+    3,
+    3
+  ],
+  "time_factors_shape": [
+    4,
+    4
+  ],
+  "core_shape": [
+    35,
+    3,
+    4
+  ]
+}
