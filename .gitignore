@@ -210,3 +210,15 @@ __marimo__/
 example_results/
 .Rproj.user
 .DS_Store
+
+# Run outputs (regenerate; never commit)
+results/
+code/results/
+*.npy
+
+# Downloaded MOSAiC data cache (see data/manifest.csv and scripts/fetch_data.py)
+data/raw/
+
+# R session clutter
+.Rhistory
+.RData
