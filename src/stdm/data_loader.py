@@ -70,32 +70,24 @@ class GeneExpressionLoader:
             Tensor of shape (n_genes, n_species, n_timepoints)
         """
         df = pd.read_csv(filepath)
-        
-        # Extract unique values
-        self.gene_names = sorted(df[gene_col].unique())
-        self.species_names = sorted(df[species_col].unique())
-        self.timepoint_names = sorted(df[timepoint_col].unique())
-        
+
+        # Keep labels in order of first appearance. Sorting them as strings
+        # put gene_10 before gene_2 and scrambled rows on a save/load round trip.
+        gene_codes, self.gene_names = pd.factorize(df[gene_col])
+        species_codes, self.species_names = pd.factorize(df[species_col])
+        time_codes, self.timepoint_names = pd.factorize(df[timepoint_col])
+        self.gene_names = list(self.gene_names)
+        self.species_names = list(self.species_names)
+        self.timepoint_names = list(self.timepoint_names)
+
         # Update dimensions
         self.n_genes = len(self.gene_names)
         self.n_species = len(self.species_names)
         self.n_timepoints = len(self.timepoint_names)
-        
-        # Create tensor
+
         tensor = np.zeros((self.n_genes, self.n_species, self.n_timepoints))
-        
-        # Create index mappings
-        gene_to_idx = {g: i for i, g in enumerate(self.gene_names)}
-        species_to_idx = {s: i for i, s in enumerate(self.species_names)}
-        timepoint_to_idx = {t: i for i, t in enumerate(self.timepoint_names)}
-        
-        # Fill tensor
-        for _, row in df.iterrows():
-            i = gene_to_idx[row[gene_col]]
-            j = species_to_idx[row[species_col]]
-            k = timepoint_to_idx[row[timepoint_col]]
-            tensor[i, j, k] = row[value_col]
-        
+        tensor[gene_codes, species_codes, time_codes] = df[value_col].to_numpy()
+
         return tensor
     
     def generate_synthetic_data(self, sparsity: float = 0.3, 
