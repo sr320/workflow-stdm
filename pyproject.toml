@@ -13,6 +13,7 @@ dependencies = [
     "tensorly>=0.8.0",
     "pandas>=2.1.0",
     "scikit-learn>=1.3.0",
+    "opt-einsum>=3.4.0",
 ]
 
 [project.optional-dependencies]
@@ -29,3 +30,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not slow'"
+markers = ["slow: long-running end-to-end fits (run with -m slow)"]
