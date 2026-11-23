@@ -216,8 +216,9 @@ results/
 code/results/
 *.npy
 
-# Downloaded MOSAiC data cache (see data/manifest.csv and scripts/fetch_data.py)
+# MOSAiC download cache and derived tensors (see `stdm fetch`, `stdm build-tensor`)
 data/raw/
+data/processed/
 
 # R session clutter
 .Rhistory

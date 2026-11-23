@@ -14,7 +14,7 @@ The roadmap is in [PLAN.md](PLAN.md).
 |---|---|
 | 0. Cleanup | done |
 | 1. Data layer (`stdm fetch`, `stdm samples`, `stdm.mosaic`) | done |
-| 2. Tensor on real data | not started |
+| 2. Tensor on real data (`stdm build-tensor`, `stdm.tensor`) | done |
 | 3. Barnacle sparse CP with rank and sparsity selection | not started |
 | 4-6. Interpretation, elastic net, extensions | not started |
 
@@ -103,9 +103,58 @@ counts, the annotated ortholog table, physiology and ITS2.
 - **CpG file filtering.** The CpG-level files are named `filtered_n20` and
   contain many missing values. They are not "covered in all samples", as the
   website states.
-- **`input-data/vst_counts_matrix.csv` has unknown provenance.** It holds
-  9,800 three-way ortholog groups x 117 samples, VST-transformed. Phase 2 will
-  rebuild it from the raw counts.
+- **`input-data/vst_counts_matrix.csv`** (9,800 three-way ortholog groups x
+  117 samples) is a blind DESeq2 VST computed jointly across the three
+  species. `stdm build-tensor --normalization vst-joint` reproduces it
+  (r = 0.9999). Its group filter could not be matched exactly and was probably
+  applied to an older ortholog table.
+
+## Expression tensor
+
+```bash
+uv run stdm build-tensor
+```
+
+This builds an ortholog group x colony x timepoint tensor from the raw gene
+counts and saves it to `data/processed/tensor-<normalization>/` (gitignored).
+The output holds `values.npy`, `groups.csv`, `colonies.csv` and `params.json`.
+
+- **Groups.** Three-way ortholog groups whose genes are in all three count
+  matrices, excluding groups that share a gene with another group. A group is
+  kept when, in every species, at least `--min-fraction` (0.5) of samples have
+  a normalised count of at least `--min-count` (10). With the defaults this
+  keeps 8,200 of 10,346 groups.
+- **Colonies.** All 30 colonies, ordered by species and then colony number,
+  labelled with species and site. Keeping colonies as a mode preserves the
+  replication that rank selection needs.
+- **Missing samples.** `POR-236-TP3`, `POR-236-TP4` and `POC-201-TP4` are
+  `NaN` and `False` in `.mask`; they are never filled with zeros.
+- **`--normalization log2-mor`** (default): median-of-ratios size factors
+  within each species, then log2(x + 1).
+- **`--normalization vst-joint`**: blind DESeq2 VST across species, as in the
+  2026 talk. It needs `uv sync --extra vst`.
+- **`--center species`**: subtracts each group's mean within each species.
+
+```python
+from stdm.tensor import ExpressionTensor, build_expression_tensor
+
+t = ExpressionTensor.load("data/processed/tensor-log2-mor")
+t.values, t.mask, t.groups, t.colonies, t.timepoints
+t.to_matrix()  # groups x observed samples
+```
+
+Share of within-group variance in each tensor (sums of squares):
+
+| Tensor | Species | Site | Colony | Time | Residual |
+|---|---|---|---|---|---|
+| log2-mor | 0.53 | 0.03 | 0.12 | 0.07 | 0.25 |
+| vst-joint | 0.51 | 0.04 | 0.12 | 0.09 | 0.24 |
+| log2-mor, species-centred | 0 | 0.07 | 0.25 | 0.15 | 0.53 |
+
+Site is measured within species, colony within site, and time within species.
+Without centring, half the variance is species-level offsets, so the first
+components of a decomposition would mostly describe species differences.
+Colony (genotype) effects are larger than seasonal time effects.
 
 ## Tests
 
@@ -122,7 +171,9 @@ data/manifest.csv       MOSAiC file list (tracked)
 data/checksums.csv      SHA-256 of fetched files (tracked)
 data/samples.csv        sample metadata (tracked, rebuilt by `stdm samples`)
 data/raw/               downloaded files (ignored)
+data/processed/         built tensors (ignored)
 src/stdm/mosaic.py      data access, ID harmonising, sample table
+src/stdm/tensor.py      ortholog x colony x timepoint tensor
 src/stdm/cli.py         `stdm` command
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold
 input-data/             synthetic test data and the VST ortholog matrix

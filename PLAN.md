@@ -65,6 +65,8 @@ All file URLs are listed on the site's `counts`, `plasticity`, `ortho`,
 ## Phases
 
 ### 0. Cleanup
+Done (2026-11-23).
+
 - Fix the loader ordering bug; diagnose and fix `test_reconstruction`.
 - Add pytest as a dev dependency.
 - Untrack result `.npy` files, `.DS_Store`, `.Rhistory`.
@@ -72,6 +74,8 @@ All file URLs are listed on the site's `counts`, `plasticity`, `ortho`,
   accurate README.
 
 ### 1. Data layer
+Done (2026-11-23).
+
 - Manifest of MOSAiC URLs plus a fetch script that caches to a gitignored
   `data/` directory and records checksums.
 - One sample metadata table: sample, species, colony, timepoint, site.
@@ -83,8 +87,18 @@ All file URLs are listed on the site's `counts`, `plasticity`, `ortho`,
 - Mask the 3 missing samples instead of filling zeros.
 - Keeps colony replication, which rank selection needs.
 
+Done (2026-11-23). Notes for phase 3:
+- The default tensor is 8,200 groups x 30 colonies x 4 timepoints.
+- Species-level offsets are about 52% of within-group variance unless
+  `--center species` is used. Colony effects (12%) are larger than time
+  effects (7-9%).
+- The joint VST used in the talk is reproduced by `--normalization vst-joint`.
+- Decide between fitting the centred tensor and the uncentred one. Barnacle's
+  non-negativity constraints need uncentred values.
+
 ### 3. Decomposition as in the talk
 - Replace the tensorly wrapper with Barnacle's sparse CP.
+- Fit with the missing-sample mask.
 - Choose rank by held-out reconstruction error across random splits.
 - Choose sparsity by split-half agreement of component membership.
 

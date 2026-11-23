@@ -312,9 +312,27 @@ def main():
         "samples", help="Build the sample metadata table from cached MOSAiC files")
     samples_parser.add_argument("--output", "-o", help="Output CSV (default: data/samples.csv)")
 
+    tensor_parser = subparsers.add_parser(
+        "build-tensor", help="Build the ortholog x colony x timepoint tensor from MOSAiC counts")
+    tensor_parser.add_argument("--normalization", choices=["log2-mor", "vst-joint"],
+                               default="log2-mor",
+                               help="log2-mor: per-species median-of-ratios + log2 (default); "
+                                    "vst-joint: DESeq2 VST across species, as in the 2026 talk")
+    tensor_parser.add_argument("--center", choices=["none", "species"], default="none",
+                               help="Subtract each group's mean within each species")
+    tensor_parser.add_argument("--min-count", type=float, default=10,
+                               help="Normalised count threshold for keeping a group (default 10)")
+    tensor_parser.add_argument("--min-fraction", type=float, default=0.5,
+                               help="Fraction of samples per species that must reach --min-count")
+    tensor_parser.add_argument("--output", "-o",
+                               help="Output directory (default: data/processed/tensor-<normalization>"
+                                    "[-centered])")
+
     args = parser.parse_args()
 
-    if args.command == "fetch":
+    if args.command == "build-tensor":
+        run_build_tensor(args)
+    elif args.command == "fetch":
         run_fetch(args)
     elif args.command == "samples":
         run_samples(args)
@@ -657,3 +675,21 @@ def run_samples(args):
     has = [c for c in meta.columns if c.startswith("has_")]
     if has:
         print(meta.groupby("species")[has].sum().to_string())
+
+
+def run_build_tensor(args):
+    """Build and save the expression tensor."""
+    from . import mosaic
+    from .tensor import build_expression_tensor
+
+    t = build_expression_tensor(normalization=args.normalization, center=args.center,
+                                min_count=args.min_count, min_fraction=args.min_fraction)
+    name = f"tensor-{args.normalization}" + ("-centered" if args.center == "species" else "")
+    out = Path(args.output) if args.output else mosaic.default_data_dir() / "processed" / name
+    t.save(out)
+    s = t.summary()
+    print(f"Saved {out}")
+    print(f"  shape (groups x colonies x timepoints): {tuple(s['shape'])}")
+    print(f"  group filtering: {s['group_counts']}")
+    print(f"  missing samples (NaN): {', '.join(s['missing_samples']) or 'none'}")
+    print(f"  value range: {s['min']:.2f} to {s['max']:.2f}")
