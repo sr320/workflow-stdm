@@ -1,5 +1,7 @@
 # Test Data for Sparse Tensor Decomposition
 
+The two `gene_expression_data*.csv` files are synthetic. `vst_counts_matrix.csv` is real MOSAiC data (9,800 three-way ortholog groups x 117 samples, VST-transformed) of unknown provenance; see the top-level README.
+
 This directory contains test gene expression datasets for the sparse tensor decomposition workflow.
 
 ## Available Datasets

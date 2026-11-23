@@ -1,320 +1,130 @@
 # workflow-stdm
 
-Sparse Tensor Decomposition for Multi-species gene expression data.
+Sparse tensor decomposition and elastic net regression for multi-species,
+multi-omic coral time-series data from the
+[E5 MOSAiC project](https://urol-e5.github.io/MOSAiC/): *Acropora pulchra*,
+*Porites evermanni* and *Pocillopora tuahiniensis*, 10 colonies each
+(5 at Manava, 5 at Mahana), sampled at four timepoints in 2020.
 
-## Overview
+The roadmap is in [PLAN.md](PLAN.md).
 
-This package provides a Python workflow for performing sparse tensor decomposition on gene expression data across multiple species and time points. It is optimized to handle:
+## Status
 
--   **\~10,000 genes**
--   **3 species**
--   **4 time points**
+| Phase | State |
+|---|---|
+| 0. Cleanup | done |
+| 1. Data layer (`stdm fetch`, `stdm samples`, `stdm.mosaic`) | done |
+| 2. Tensor on real data | not started |
+| 3. Barnacle sparse CP with rank and sparsity selection | not started |
+| 4-6. Interpretation, elastic net, extensions | not started |
 
-The workflow uses efficient tensor decomposition methods (PARAFAC/CP and Tucker) to identify patterns and factors in multi-dimensional gene expression data.
+The `generate` / `decompose` / `run` / `info` commands and
+`SparseTensorDecomposer` are the original synthetic-data scaffold: plain
+tensorly PARAFAC/Tucker on a genes x species x timepoints tensor. They are not
+yet the method from the talk and should not be pointed at real data; phases 2
+and 3 replace them.
 
-## Features
+## Install
 
--   **Sparse tensor decomposition** using PARAFAC (CP) and Tucker methods
--   **Optimized for gene expression data** with automatic preprocessing
--   **Data loading utilities** for CSV-based gene expression datasets
--   **Synthetic data generation** for testing and validation
--   **Command-line interface** for easy workflow execution
--   **UV package manager** for fast, reliable dependency management
-
-## Installation
-
-### Using UV (Recommended)
-
-``` bash
-# Clone the repository
-git clone https://github.com/sr320/workflow-stdm.git
-cd workflow-stdm
-
-# Install with uv
+```bash
 uv sync
-
-# Activate the virtual environment
-source .venv/bin/activate  # On Unix/macOS
-# or
-.venv\Scripts\activate  # On Windows
 ```
 
-### Using pip
+Commands below are run with `uv run`, or activate `.venv` first.
 
-``` bash
-pip install -e .
+## Data
+
+```bash
+uv run stdm fetch --list
 ```
 
-## Quick Start
-
-### Option 1: Use Provided Test Data (Recommended)
-
-The repository includes test datasets in the `input-data/` directory. Simply run:
-
-``` bash
-# Run workflow with default test data (10k genes, 3 species, 4 time points)
-stdm run --rank 5 --method parafac
-
-# Or use the smaller test dataset for quick testing
-stdm run --input gene_expression_data_small.csv --rank 5 --method parafac
+```bash
+uv run stdm fetch
 ```
 
-### Option 2: Generate and Use Synthetic Data
-
-### 1. Generate Synthetic Data
-
-``` bash
-stdm generate --output data.csv --genes 10000 --species 3 --timepoints 4
+```bash
+uv run stdm samples
 ```
 
-### 2. View Data Information
+`fetch` downloads every file in [data/manifest.csv](data/manifest.csv) into
+`data/raw/` (gitignored, about 200 MB) and skips files already cached. Each
+file's SHA-256 is checked against [data/checksums.csv](data/checksums.csv); a
+mismatch means the upstream file changed and is reported as a warning
+(`--update-checksums` accepts it). Narrow a fetch with `--species`,
+`--data-type` or `--key`. The three CpG-level methylation files are about
+1 GB each and are only fetched with `--include-large`.
 
-``` bash
-stdm info --input data.csv
-```
-
-### 3. Perform Tensor Decomposition
-
-``` bash
-stdm decompose --input data.csv --output results/ --rank 5 --method parafac
-```
-
-## Usage
-
-### Command-Line Interface
-
-The package provides four main commands:
-
-#### Run Complete Workflow (Recommended)
-
-Use test data from `input-data/` directory:
-
-``` bash
-stdm run [OPTIONS]
-
-Options:
-  -i, --input PATH              Input CSV file (default: gene_expression_data.csv from input-data/)
-  -o, --output PATH             Output directory (default: results)
-  -r, --rank INT               Decomposition rank (default: 5)
-  -m, --method {parafac,tucker} Decomposition method (default: parafac)
-  --sparsity-threshold FLOAT   Sparsity threshold (default: 0.01)
-  --normalize                  Normalize tensor
-  --log-transform              Apply log2(x+1) transformation (default: True)
-  --no-log-transform           Skip log transformation
-  --standardize                Standardize gene expression (default: True)
-  --no-standardize             Skip standardization
-  -v, --verbose                Verbose output
-
-# Examples:
-stdm run                                      # Use default test data
-stdm run --input gene_expression_data_small.csv  # Use small test data
-stdm run --method tucker --rank 10           # Tucker with rank 10
-```
-
-**New Features:**
-
--   **Auto-timestamping**: Each run automatically creates a timestamped subdirectory (e.g., `results/20251012_175729/`) so results are never overwritten
--   **Automatic README Report**: Every run generates a comprehensive `README.md` in the output directory that includes:
-    -   Run timestamp and configuration
-    -   Input data summary
-    -   Output files description with usage examples
-    -   Quality assessment and optimal parameter recommendations
-    -   Python code examples for loading and analyzing results
-    -   Biological interpretation guidelines
-
-**Using Your Own Data:**
-
-You can easily use your own gene expression data by providing the `--input` option:
-
-``` bash
-# Use data from input-data directory
-stdm run --input my_custom_data.csv
-
-# Use data from any path
-stdm run --input /path/to/my/data.csv --output my_results
-
-# Use data from absolute path
-stdm run --input ~/research/gene_expression.csv --output ~/results/analysis1
-```
-
-**Data Format Requirements:**
-
-Your CSV file should be in the following format:
-
-``` csv
-gene,species,timepoint,expression
-gene1,species1,t0,0.5
-gene1,species1,t1,0.7
-gene1,species2,t0,0.3
-...
-```
-
-#### Generate Synthetic Data
-
-``` bash
-stdm generate [OPTIONS]
-
-Options:
-  -o, --output PATH       Output CSV file path (required)
-  -g, --genes INT        Number of genes (default: 10000)
-  -s, --species INT      Number of species (default: 3)
-  -t, --timepoints INT   Number of time points (default: 4)
-  --sparsity FLOAT       Sparsity level 0-1 (default: 0.3)
-  --noise FLOAT          Noise level (default: 0.1)
-  --seed INT             Random seed (default: 42)
-```
-
-#### Decompose Tensor
-
-``` bash
-stdm decompose [OPTIONS]
-
-Options:
-  -i, --input PATH              Input CSV file path (required)
-  -o, --output PATH             Output directory (required)
-  -r, --rank INT               Decomposition rank (default: 5)
-  -m, --method {parafac,tucker} Decomposition method (default: parafac)
-  --sparsity-threshold FLOAT   Sparsity threshold (default: 0.01)
-  --normalize                  Normalize tensor
-  --log-transform              Apply log2(x+1) transformation
-  --standardize                Standardize gene expression
-  -v, --verbose                Verbose output
-```
-
-#### Get Tensor Information
-
-``` bash
-stdm info --input PATH
-```
+`samples` writes [data/samples.csv](data/samples.csv): one row per
+colony x timepoint with species, colony, site, timepoint, month and a
+`has_<type>` flag per data type.
 
 ### Python API
 
-``` python
-from stdm import SparseTensorDecomposer, GeneExpressionLoader
+```python
+from stdm import mosaic
 
-# Load or generate data
-loader = GeneExpressionLoader(n_genes=10000, n_species=3, n_timepoints=4)
-tensor = loader.generate_synthetic_data(sparsity=0.3, seed=42)
-
-# Or load from CSV
-# tensor = loader.load_from_csv("data.csv")
-
-# Preprocess
-tensor = loader.preprocess(tensor, log_transform=True, standardize=True)
-
-# Decompose
-decomposer = SparseTensorDecomposer(rank=5, method="parafac")
-decomposer.fit(tensor, verbose=True)
-
-# Get results
-gene_factors = decomposer.get_gene_factors()
-species_factors = decomposer.get_species_factors()
-time_factors = decomposer.get_time_factors()
-summary = decomposer.get_summary()
-
-print(f"Reconstruction error: {summary['reconstruction_error']:.6f}")
-
-# Reconstruct tensor
-reconstructed = decomposer.reconstruct()
+meta = mosaic.build_sample_metadata()            # or pd.read_csv("data/samples.csv")
+counts, _ = mosaic.load_matrix("apul_gene")      # features x samples
+lnc, coords = mosaic.load_matrix("peve_lncrna")  # annotation columns split out
+mirna, _ = mosaic.load_matrix("ptua_mirna")      # well-prefixed labels harmonised
+orthologs = mosaic.load_orthologs()              # one row per group, canonical gene IDs
+physiology = mosaic.load_table("multi_physiology")
 ```
 
-## Data Format
+Matrix columns are canonical sample IDs (`ACR-145-TP4`) sorted by species,
+colony and timepoint. Gene-keyed matrices use canonical gene IDs, which match
+the ortholog table.
 
-### Input CSV Format
+### What is in the data
 
-The expected CSV format for gene expression data:
+| Data type | Apul | Peve | Ptua | Notes |
+|---|---|---|---|---|
+| Gene counts | 44,371 x 40 | 40,389 x 38 | 31,840 x 39 | raw counts |
+| miRNA | 51 x 40 | 48 x 37 | 40 x 39 | raw counts |
+| lncRNA | 15,559 x 40 | 8,319 x 38 | 11,236 x 39 | raw counts |
+| Gene-body methylation | 21,621 x 40 | 20,824 x 37 | 23,369 x 32 | percent; 2-5% missing |
+| Exon CV | 10,006 x 40 | 12,174 x 38 | 11,342 x 39 | 6-10% missing |
+| Metabolomics / lipidomics | 29 | 38 | 29 | samples per species; 141 / 371 features |
 
-``` csv
-gene,species,timepoint,expression
-gene1,species1,t0,0.5
-gene1,species1,t1,0.7
-gene1,species2,t0,0.3
-...
+Also cached: epigenetic-machinery and calcification-gene subsets, exon-level
+counts, the annotated ortholog table, physiology and ITS2.
+
+### Things to know before modelling
+
+- **Unbalanced design.** 117 of 120 colony-timepoints have RNA-seq.
+  *P. tuahiniensis* has gene-body methylation for only 32 samples.
+- **Genes in more than one ortholog group.** 230 *A. pulchra* genes appear in
+  two or more groups, because different transcripts of one gene were assigned
+  to different groups. A gene must not be counted twice in a tensor.
+- **Ortholog genes missing from counts.** 3.2% of *A. pulchra* ortholog genes
+  (IDs from about `FUN_044375` on) are not in the gene count matrix.
+- **Duplicate ortholog rows.** 46 ortholog groups are repeated upstream (one
+  row per annotation hit); `load_orthologs` keeps the first.
+- **CpG file filtering.** The CpG-level files are named `filtered_n20` and
+  contain many missing values. They are not "covered in all samples", as the
+  website states.
+- **`input-data/vst_counts_matrix.csv` has unknown provenance.** It holds
+  9,800 three-way ortholog groups x 117 samples, VST-transformed. Phase 2 will
+  rebuild it from the raw counts.
+
+## Tests
+
+```bash
+uv run pytest
 ```
 
-### Output Files
+Tests that read the real data are skipped until `stdm fetch` has run.
 
-Each run generates a timestamped directory (e.g., `results/20251012_175729/`) containing:
+## Layout
 
--   `gene_factors.npy` - Gene factor matrix (n_genes × rank)
--   `species_factors.npy` - Species factor matrix (n_species × rank)
--   `time_factors.npy` - Time factor matrix (n_timepoints × rank)
--   `reconstructed_tensor.npy` - Reconstructed tensor
--   `summary.json` - Decomposition summary with reconstruction error
--   **`README.md`** - **Comprehensive analysis report** with:
-    -   Run configuration and timestamp
-    -   Input data statistics
-    -   Quality assessment and parameter recommendations
-    -   Detailed file descriptions
-    -   Python code examples for result analysis
-    -   Biological interpretation guidelines
-
-**Example directory structure after multiple runs:**
-
-```         
-results/
-├── 20251012_143022/  # First run
-│   ├── README.md
-│   ├── gene_factors.npy
-│   ├── species_factors.npy
-│   ├── time_factors.npy
-│   ├── reconstructed_tensor.npy
-│   └── summary.json
-└── 20251012_175729/  # Second run
-    ├── README.md
-    ├── gene_factors.npy
-    ├── species_factors.npy
-    ├── time_factors.npy
-    ├── reconstructed_tensor.npy
-    └── summary.json
 ```
-
-## Methods
-
-### PARAFAC (CP) Decomposition
-
-Canonical Polyadic (CP) decomposition, also known as PARAFAC, decomposes the tensor into a sum of rank-1 tensors. It's efficient and provides interpretable factors.
-
-### Tucker Decomposition
-
-Tucker decomposition is a higher-order generalization of matrix SVD. It decomposes the tensor into a core tensor multiplied by factor matrices along each mode.
-
-## Performance Considerations
-
--   **Sparsity**: The package automatically handles sparse tensors, setting values below the threshold to zero
--   **Normalization**: Tensor normalization improves numerical stability
--   **Rank selection**: Lower ranks are faster but may lose information; higher ranks capture more detail
--   **Memory**: With 10k genes, 3 species, and 4 timepoints, the tensor requires \~960 KB (double precision)
-
-## Development
-
-``` bash
-# Install development dependencies
-uv sync
-
-# Run tests (if available)
-pytest
-
-# Format code
-ruff format src/
-
-# Lint code
-ruff check src/
-```
-
-## License
-
-MIT License
-
-## Citation
-
-If you use this package in your research, please cite:
-
-```         
-@software{workflow_stdm,
-  title = {Sparse Tensor Decomposition for Multi-species Gene Expression},
-  author = {Your Name},
-  year = {2025},
-  url = {https://github.com/sr320/workflow-stdm}
-}
+data/manifest.csv       MOSAiC file list (tracked)
+data/checksums.csv      SHA-256 of fetched files (tracked)
+data/samples.csv        sample metadata (tracked, rebuilt by `stdm samples`)
+data/raw/               downloaded files (ignored)
+src/stdm/mosaic.py      data access, ID harmonising, sample table
+src/stdm/cli.py         `stdm` command
+src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold
+input-data/             synthetic test data and the VST ortholog matrix
+tests/
 ```
