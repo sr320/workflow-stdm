@@ -837,7 +837,11 @@ def run_sparse_cp(args):
     model = SparseCP(args.rank, args.lambdas, nonneg_modes=[0], n_initializations=args.n_init,
                      random_state=args.seed, n_iter_max=args.max_iter, tol=args.tol)
     t0 = time.time()
-    model.fit_transform(t.values, mask=t.mask, n_jobs=args.n_jobs, verbose=1)
+    for old in out.glob("progress-init*.tsv"):
+        old.unlink()
+    print(f"Fitting rank {args.rank}, lambdas {args.lambdas}, {args.n_init} initialisations, "
+          f"up to {args.max_iter} iterations; progress in {out}/progress-init*.tsv", flush=True)
+    model.fit_transform(t.values, mask=t.mask, n_jobs=args.n_jobs, verbose=1, log_dir=out)
     frames = factors_to_frames(model.decomposition_.factors, list(t.groups.index),
                                list(t.colonies.index))
     for name, df in frames.items():
@@ -848,5 +852,10 @@ def run_sparse_cp(args):
         "args": vars(args), "tensor_params": t.params, "seconds": time.time() - t0,
         "final_losses": [l[-1] for l in model.candidate_losses_],
         "iterations": [len(l) for l in model.candidate_losses_],
+        "converged": [len(l) < args.max_iter or
+                      abs(l[-2] - l[-1]) / max(l[-1], 1) < args.tol
+                      for l in model.candidate_losses_],
+        "best_initialization": model._best + 1,
         "gene_zero_fraction": float((frames["gene"].to_numpy() == 0).mean())})
+    np.savez(out / "losses.npz", *[np.asarray(l) for l in model.candidate_losses_])
     print(f"Saved {out}")

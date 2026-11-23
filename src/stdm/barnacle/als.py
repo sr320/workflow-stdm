@@ -19,6 +19,7 @@ Changes from upstream:
 from __future__ import annotations
 
 import warnings
+from pathlib import Path
 from typing import Optional, Sequence
 
 import numpy as np
@@ -69,6 +70,8 @@ def als_lasso(
     threads: Optional[int] = None,
     verbose: int = 0,
     mask: Optional[np.ndarray] = None,
+    log_path: Optional[str] = None,
+    log_every: int = 25,
 ) -> tuple[CPTensor, list[float]]:
     r"""Rank-``rank`` CP decomposition minimising
 
@@ -151,11 +154,16 @@ def als_lasso(
             losses.append(loss)
             if verbose > 1:
                 print(f"iteration {iteration + 1}: loss {loss}", flush=True)
+            change = (abs(losses[-2] - losses[-1]) / max(losses[-1], 1)
+                      if iteration != 0 else float("nan"))
+            if log_path and ((iteration + 1) % log_every == 0 or iteration == 0
+                             or (tol != 0 and change < tol)):
+                with open(log_path, "a") as fh:
+                    fh.write(f"{iteration + 1}\t{loss:.6f}\t{change:.3e}\n")
 
             if loss == 0.0:
                 break
             if tol != 0 and iteration != 0:
-                change = abs(losses[-2] - losses[-1]) / max(losses[-1], 1)
                 if change < tol:
                     if verbose > 0:
                         print(f"converged after {iteration + 1} iterations", flush=True)
@@ -198,12 +206,15 @@ class SparseCP:
             raise AttributeError("The model has not yet been fit with data.")
         return self.candidate_losses_[self._best]
 
-    def fit_transform(self, tensor, mask=None, threads=None, verbose=0, n_jobs=1) -> CPTensor:
+    def fit_transform(self, tensor, mask=None, threads=None, verbose=0, n_jobs=1,
+                      log_dir=None) -> CPTensor:
         """Fit ``n_initializations`` models and keep the one with lowest final loss.
 
         With ``n_jobs > 1`` initialisations run in parallel processes. Random
         starting factors are drawn up front in the same order as the
-        sequential loop, so results are identical either way.
+        sequential loop, so results are identical either way. With
+        ``log_dir``, each initialisation appends ``iteration, loss, relative
+        change`` lines to ``progress-init<i>.tsv`` there.
         """
         rns = check_random_state(self.random_state)
         tensor = np.asarray(tensor, dtype=float)
@@ -216,7 +227,12 @@ class SparseCP:
         kwargs = dict(nonneg_modes=self.nonneg_modes, norm_constraint=self.norm_constraint,
                       tol=self.tol, n_iter_max=self.n_iter_max, threads=threads,
                       verbose=verbose - 1, mask=mask)
-        jobs = [(tensor, self.rank, self.lambdas, init, kwargs) for init in inits]
+        jobs = []
+        for i, init in enumerate(inits):
+            kw = dict(kwargs)
+            if log_dir is not None:
+                kw["log_path"] = str(Path(log_dir) / f"progress-init{i + 1}.tsv")
+            jobs.append((tensor, self.rank, self.lambdas, init, kw))
         if n_jobs > 1 and len(jobs) > 1:
             from concurrent.futures import ProcessPoolExecutor
             with ProcessPoolExecutor(max_workers=min(n_jobs, len(jobs))) as ex:
