@@ -293,10 +293,32 @@ def main():
     run_parser.add_argument("--no-standardize", dest="standardize", action="store_false",
                            help="Skip standardization")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    
+
+    # MOSAiC data commands
+    fetch_parser = subparsers.add_parser(
+        "fetch", help="Download MOSAiC data files listed in data/manifest.csv")
+    fetch_parser.add_argument("--species", nargs="+", choices=["apul", "peve", "ptua", "multi"])
+    fetch_parser.add_argument("--data-type", nargs="+", dest="data_types",
+                              help="e.g. gene mirna lncrna gene_meth orthologs physiology")
+    fetch_parser.add_argument("--key", nargs="+", dest="keys", help="Manifest keys, e.g. apul_gene")
+    fetch_parser.add_argument("--include-large", action="store_true",
+                              help="Also fetch ~1 GB CpG-level methylation files")
+    fetch_parser.add_argument("--force", action="store_true", help="Re-download cached files")
+    fetch_parser.add_argument("--update-checksums", action="store_true",
+                              help="Accept changed upstream files into data/checksums.csv")
+    fetch_parser.add_argument("--list", action="store_true", help="List manifest entries and exit")
+
+    samples_parser = subparsers.add_parser(
+        "samples", help="Build the sample metadata table from cached MOSAiC files")
+    samples_parser.add_argument("--output", "-o", help="Output CSV (default: data/samples.csv)")
+
     args = parser.parse_args()
-    
-    if args.command == "generate":
+
+    if args.command == "fetch":
+        run_fetch(args)
+    elif args.command == "samples":
+        run_samples(args)
+    elif args.command == "generate":
         run_generate(args)
     elif args.command == "decompose":
         run_decompose(args)
@@ -599,3 +621,39 @@ def run_workflow(args):
 
 if __name__ == "__main__":
     main()
+
+
+def run_fetch(args):
+    """Download MOSAiC files into data/raw/."""
+    from . import mosaic
+
+    manifest = mosaic.load_manifest()
+    if args.list:
+        for e in manifest.values():
+            cached = "cached" if mosaic.raw_path(e).exists() else ""
+            large = "large" if e.large else ""
+            print(f"{e.key:24s} {e.kind:6s} {large:5s} {cached:6s} {e.description}")
+        return
+    entries = mosaic.select(manifest, species=args.species, data_types=args.data_types,
+                            keys=args.keys, include_large=args.include_large)
+    if not entries:
+        print("Nothing matched.")
+        return
+    mosaic.fetch(entries, force=args.force, update_checksums=args.update_checksums)
+    skipped = [e.key for e in manifest.values()
+               if e.large and e not in entries and not args.keys]
+    if skipped and not args.include_large:
+        print(f"Skipped large files (use --include-large): {', '.join(skipped)}")
+
+
+def run_samples(args):
+    """Write the sample metadata table and print data-type coverage."""
+    from . import mosaic
+
+    meta = mosaic.build_sample_metadata()
+    out = Path(args.output) if args.output else mosaic.default_data_dir() / "samples.csv"
+    meta.to_csv(out, index=False)
+    print(f"Wrote {len(meta)} samples to {out}")
+    has = [c for c in meta.columns if c.startswith("has_")]
+    if has:
+        print(meta.groupby("species")[has].sum().to_string())
