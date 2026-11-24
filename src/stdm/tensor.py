@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -203,6 +203,21 @@ def _vst_joint(combined_counts: pd.DataFrame) -> pd.DataFrame:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def center_by_species(values: np.ndarray, species: Sequence[str]) -> np.ndarray:
+    """Subtract each group's mean over the observed samples of each species.
+
+    ``values`` is groups x colonies x timepoints with NaN for missing samples;
+    ``species`` labels the colonies. Returns a new array.
+    """
+    values = np.array(values, dtype=float)
+    species = np.asarray(species)
+    for sp in pd.unique(species):
+        idx = np.flatnonzero(species == sp)
+        block = values[:, idx, :]
+        values[:, idx, :] = block - np.nanmean(block.reshape(len(values), -1), axis=1)[:, None, None]
+    return values
+
+
 def build_expression_tensor(
     data_dir: Optional[Path] = None,
     normalization: str = "log2-mor",
@@ -266,10 +281,7 @@ def build_expression_tensor(
                 values[:, ci, ti] = e.loc[groups.index, sample].to_numpy()
 
     if center == "species":
-        for sp in SPECIES:
-            idx = np.flatnonzero(colonies["species"].to_numpy() == sp)
-            block = values[:, idx, :]
-            values[:, idx, :] = block - np.nanmean(block.reshape(len(groups), -1), axis=1)[:, None, None]
+        values = center_by_species(values, colonies["species"].to_numpy())
 
     group_table = groups[[*SPECIES, "protein_name", "goslim_names"]].copy()
     group_table.index.name = "group_id"

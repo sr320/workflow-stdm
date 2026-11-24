@@ -178,6 +178,61 @@ def one_se_rank(df: pd.DataFrame) -> int:
     return int(g.index[g["mean"] <= threshold].min())
 
 
+def select_rank_stability(tensor: np.ndarray, species: Sequence[str], site: Sequence[str],
+                          ranks: Sequence[int], n_splits: int = 5,
+                          lambdas=(0.0, 0.0, 0.0), nonneg_modes=(0,),
+                          n_initializations: int = 3, threshold: float = 0.9,
+                          n_iter_max: int = 2000, tol: float = 1e-6, seed: int = 0,
+                          workers: Optional[int] = None) -> tuple[int, pd.DataFrame]:
+    """Choose rank by split-half reproducibility of gene and time factors.
+
+    For each rank and split, the model is fit separately to two site-balanced
+    halves of the colonies and the components are matched on the gene and
+    time modes. Use this when held-out-sample prediction cannot separate
+    ranks (sample-level noise dominates the shared signal).
+
+    Similarity is the absolute cosine product over gene and time modes,
+    without the weight term: halves contain different colonies, and with no
+    normalised mode the split of scale between modes is arbitrary, so
+    weights are not comparable. Absolute values allow for sign flips, which
+    unconstrained modes permit.
+
+    Returns ``(rank, df)``: the rank with the most reproducible components
+    (mean count of components with similarity above ``threshold``; ties go
+    to the smaller rank), and one row per rank and split with the mean FMS,
+    the worst component, and the number of components above ``threshold``
+    and above 0.5. A mean-FMS cutoff is not used because a too-large rank
+    can still score well when its extra components happen to agree, while
+    a too-small rank can score badly when it mixes similar-sized components.
+    """
+    observed_cells = ~np.isnan(tensor)
+    halves = colony_halves(species, site, n_splits, seed)
+    jobs, keys = [], []
+    for r in ranks:
+        for s, (a, b) in enumerate(halves):
+            spec = FitSpec(r, tuple(float(x) for x in lambdas), tuple(nonneg_modes),
+                           n_initializations, n_iter_max, tol, seed + 1000 * s + r)
+            jobs += [(tensor, observed_cells, a, spec), (tensor, observed_cells, b, spec)]
+            keys.append((r, s))
+    fits = _run(jobs, _half_job, workers or default_workers())
+    rows = []
+    for i, (r, s) in enumerate(keys):
+        (fa, ia), (fb, ib) = fits[2 * i], fits[2 * i + 1]
+        fms, per, _ = factor_match_score(fa, fb, modes=(0, 2), consider_weights=False,
+                                         absolute=True)
+        rows.append(dict(rank=r, split=s, fms=fms, min_component=float(per.min()),
+                         n_reproducible=int((per > threshold).sum()),
+                         n_above_0_5=int((per > 0.5).sum()), iterations=ia + ib))
+    df = pd.DataFrame(rows)
+    return stability_rank(df), df
+
+
+def stability_rank(df: pd.DataFrame) -> int:
+    """Rank with the highest mean ``n_reproducible``; ties go to the smaller rank."""
+    means = df.groupby("rank")["n_reproducible"].mean()
+    return int(means.index[np.isclose(means, means.max())].min())
+
+
 # ---------------------------------------------------------------------------
 # Stage 2: sparsity
 # ---------------------------------------------------------------------------

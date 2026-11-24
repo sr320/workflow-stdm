@@ -5,7 +5,8 @@ import pytest
 
 from stdm.barnacle import SparseCP, als_lasso, factor_match_score
 from stdm.selection import (colony_halves, one_se_lambda, one_se_rank, sample_holdout_masks,
-                            select_lambda, select_rank)
+                            select_lambda, select_rank, select_rank_stability,
+                            stability_rank)
 import pandas as pd
 
 
@@ -121,6 +122,24 @@ def test_one_se_rules():
     assert one_se_rank(df) == 3
     df = pd.DataFrame({"lam": [0, 0, 1, 1, 10, 10], "fms": [0.9, 0.92, 0.91, 0.9, 0.5, 0.6]})
     assert one_se_lambda(df) == 1
+
+
+def test_stability_rank_rule():
+    df = pd.DataFrame({"rank": [1, 1, 2, 2, 3, 3, 4, 4],
+                       "n_reproducible": [1, 1, 2, 2, 2, 1, 2, 2]})
+    assert stability_rank(df) == 2
+
+
+@pytest.mark.slow
+def test_stability_selects_planted_rank():
+    X, _ = planted(I=80, J=12, K=4, R=2, seed=2, noise=0.05)
+    X[:, 0, 3] = np.nan
+    species = ["a"] * 6 + ["b"] * 6
+    site = (["x"] * 3 + ["y"] * 3) * 2
+    rank, df = select_rank_stability(X, species, site, ranks=[1, 2, 4], n_splits=2,
+                                     n_initializations=2, n_iter_max=1000, workers=1)
+    assert df.groupby("rank").fms.mean()[2] > 0.9
+    assert rank == 2
 
 
 @pytest.mark.slow

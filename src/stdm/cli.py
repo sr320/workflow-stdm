@@ -328,8 +328,11 @@ def main():
                                help="Output directory (default: data/processed/tensor-<normalization>"
                                     "[-centered])")
 
-    tensor_help = ("'talk' for the talk's VST matrix (missing samples masked) or a directory "
+    tensor_help = ("'talk' for the talk's VST matrix (missing samples masked), 'talk-centered' "
+                   "for the same with each species' gene means removed, or a directory "
                    "written by build-tensor")
+    nonneg_help = ("Modes constrained non-negative (0 gene, 1 colony, 2 time); pass the flag "
+                   "with no values for none, as centred data needs")
 
     repro_parser = subparsers.add_parser(
         "reproduce-talk", help="Refit the talk's rank-35 Barnacle model and compare to published factors")
@@ -346,8 +349,27 @@ def main():
     rank_parser.add_argument("--max-iter", type=int, default=1000)
     rank_parser.add_argument("--tol", type=float, default=1e-5)
     rank_parser.add_argument("--seed", type=int, default=0)
+    rank_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
     rank_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
     rank_parser.add_argument("--output", "-o", default="results/select-rank")
+
+    stab_parser = subparsers.add_parser(
+        "select-rank-stability",
+        help="Stage 1 alternative: choose rank by split-half reproducibility of components")
+    stab_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    stab_parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6, 8, 10])
+    stab_parser.add_argument("--splits", type=int, default=5)
+    stab_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
+                             default=[0.0, 0.0, 0.0])
+    stab_parser.add_argument("--n-init", type=int, default=3, help="Initialisations per half")
+    stab_parser.add_argument("--threshold", type=float, default=0.9,
+                             help="Similarity above which a component counts as reproduced")
+    stab_parser.add_argument("--max-iter", type=int, default=2000)
+    stab_parser.add_argument("--tol", type=float, default=1e-6)
+    stab_parser.add_argument("--seed", type=int, default=0)
+    stab_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
+    stab_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
+    stab_parser.add_argument("--output", "-o", default="results/select-rank-stability")
 
     lam_parser = subparsers.add_parser(
         "select-lambda", help="Stage 2: choose gene sparsity by split-half FMS (1-SE rule)")
@@ -361,6 +383,7 @@ def main():
     lam_parser.add_argument("--max-iter", type=int, default=1000)
     lam_parser.add_argument("--tol", type=float, default=1e-5)
     lam_parser.add_argument("--seed", type=int, default=0)
+    lam_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
     lam_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
     lam_parser.add_argument("--output", "-o", default="results/select-lambda")
 
@@ -375,6 +398,7 @@ def main():
     fit_parser.add_argument("--max-iter", type=int, default=2000)
     fit_parser.add_argument("--tol", type=float, default=1e-5)
     fit_parser.add_argument("--seed", type=int, default=81)
+    fit_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
     fit_parser.add_argument("--output", "-o", required=True)
 
     args = parser.parse_args()
@@ -383,6 +407,8 @@ def main():
         run_reproduce_talk(args)
     elif args.command == "select-rank":
         run_select_rank(args)
+    elif args.command == "select-rank-stability":
+        run_select_rank_stability(args)
     elif args.command == "select-lambda":
         run_select_lambda(args)
     elif args.command == "sparse-cp":
@@ -754,9 +780,14 @@ def run_build_tensor(args):
 
 def _load_expression_tensor(spec):
     from .tensor import ExpressionTensor
-    if spec == "talk":
+    if spec in ("talk", "talk-centered"):
         from .reproduce import talk_expression_tensor
-        return talk_expression_tensor(Path("input-data/vst_counts_matrix.csv"))
+        t = talk_expression_tensor(Path("input-data/vst_counts_matrix.csv"))
+        if spec == "talk-centered":
+            from .tensor import center_by_species
+            t.values = center_by_species(t.values, t.colonies.species.to_numpy())
+            t.params = {**t.params, "center": "species"}
+        return t
     return ExpressionTensor.load(Path(spec))
 
 
@@ -802,12 +833,30 @@ def run_select_rank(args):
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank(t.values, t.colonies.species.to_numpy(), args.ranks,
                            n_splits=args.splits, test_fraction=args.test_fraction,
-                           n_iter_max=args.max_iter, tol=args.tol, seed=args.seed,
-                           workers=args.workers)
+                           nonneg_modes=tuple(args.nonneg_modes), n_iter_max=args.max_iter,
+                           tol=args.tol, seed=args.seed, workers=args.workers)
     df.to_csv(out / "cv.csv", index=False)
     _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
     print(df.groupby("rank")[["test_sse", "test_r2"]].agg(["mean", "std"]).round(4).to_string())
     print(f"Selected rank (1-SE rule): {rank}")
+
+
+def run_select_rank_stability(args):
+    from .selection import select_rank_stability
+    t = _load_expression_tensor(args.tensor)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    rank, df = select_rank_stability(
+        t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(), args.ranks,
+        n_splits=args.splits, lambdas=tuple(args.lambdas),
+        nonneg_modes=tuple(args.nonneg_modes), n_initializations=args.n_init,
+        threshold=args.threshold, n_iter_max=args.max_iter, tol=args.tol, seed=args.seed,
+        workers=args.workers)
+    df.to_csv(out / "stability.csv", index=False)
+    _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
+    print(df.groupby("rank")[["fms", "min_component", "n_reproducible", "n_above_0_5"]]
+          .mean().round(3).to_string())
+    print(f"Selected rank (most reproducible components): {rank}")
 
 
 def run_select_lambda(args):
@@ -818,7 +867,8 @@ def run_select_lambda(args):
     lam, df = select_lambda(t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(),
                             rank=args.rank, lambda_grid=args.grid,
                             fixed_lambdas=(None, args.lambda_colony, args.lambda_time),
-                            n_splits=args.splits, n_iter_max=args.max_iter, tol=args.tol,
+                            n_splits=args.splits, nonneg_modes=tuple(args.nonneg_modes),
+                            n_iter_max=args.max_iter, tol=args.tol,
                             seed=args.seed, workers=args.workers)
     df.to_csv(out / "fms.csv", index=False)
     _write_json(out / "selection.json", {"selected_lambda_gene": lam, "args": vars(args)})
@@ -834,7 +884,8 @@ def run_sparse_cp(args):
     t = _load_expression_tensor(args.tensor)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    model = SparseCP(args.rank, args.lambdas, nonneg_modes=[0], n_initializations=args.n_init,
+    model = SparseCP(args.rank, args.lambdas, nonneg_modes=list(args.nonneg_modes),
+                     n_initializations=args.n_init,
                      random_state=args.seed, n_iter_max=args.max_iter, tol=args.tol)
     t0 = time.time()
     for old in out.glob("progress-init*.tsv"):
