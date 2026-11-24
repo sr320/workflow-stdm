@@ -15,14 +15,14 @@ The roadmap is in [PLAN.md](PLAN.md).
 | 0. Cleanup | done |
 | 1. Data layer (`stdm fetch`, `stdm samples`, `stdm.mosaic`) | done |
 | 2. Tensor on real data (`stdm build-tensor`, `stdm.tensor`) | done |
-| 3. Barnacle sparse CP with rank and sparsity selection | not started |
+| 3. Barnacle sparse CP with rank and sparsity selection | done; see [Sparse CP](#sparse-cp) |
 | 4-6. Interpretation, elastic net, extensions | not started |
 
 The `generate` / `decompose` / `run` / `info` commands and
 `SparseTensorDecomposer` are the original synthetic-data scaffold: plain
 tensorly PARAFAC/Tucker on a genes x species x timepoints tensor. They are not
-yet the method from the talk and should not be pointed at real data; phases 2
-and 3 replace them.
+the method from the talk and should not be pointed at real data; use
+`build-tensor` and `sparse-cp` instead.
 
 ## Install
 
@@ -156,6 +156,76 @@ Without centring, half the variance is species-level offsets, so the first
 components of a decomposition would mostly describe species differences.
 Colony (genotype) effects are larger than seasonal time effects.
 
+## Sparse CP
+
+`src/stdm/barnacle/` is a vendored copy of
+[Barnacle](https://github.com/blasks/barnacle) (MIT), the l1-penalised CP
+used in the 2026 talk. It is vendored because Barnacle pins Python < 3.12
+and numpy < 2. One addition: a `mask` argument fits around missing samples
+instead of treating them as values.
+
+```bash
+uv run stdm sparse-cp --tensor talk-centered --top-variable 2000 --nonneg-modes \
+    --rank 3 --lambdas 0 0 0 --n-init 20 --output results/centered-top2000-r3
+```
+
+- **`--tensor`**: `talk` is `input-data/vst_counts_matrix.csv` with missing
+  samples masked; `talk-centered` also removes each species' gene means; a
+  directory from `build-tensor` also works.
+- **`--top-variable N`**: keeps the N groups with the highest within-species
+  variance.
+- **`--nonneg-modes`**: modes held non-negative (default: gene). Pass the flag
+  alone for none, which centred data needs.
+
+Output: gene, colony and time factor CSVs, per-initialisation progress logs,
+and `run.json` with losses, iterations and convergence.
+
+Selection commands:
+
+| Command | Chooses | How |
+|---|---|---|
+| `select-rank` | rank | held-out samples, 1-SE rule on test SSE |
+| `select-rank-stability` | rank | components reproduced across site-balanced colony halves |
+| `select-lambda` | gene sparsity | split-half factor match score, 1-SE rule |
+| `reproduce-talk` | — | refits the talk's rank-35 model and compares with the published factors |
+
+### Results on the talk's VST data
+
+- **The talk model reproduces exactly.** With zero-filled missing samples and
+  the talk's settings (rank 35, lambdas 0.2/0.1/0.05, seed 81), the factors
+  match the published ones to 1.2e-7. All three initialisations stopped at
+  the 2,000-iteration cap without converging.
+- **Those components are not stable.** Masking the missing samples and running
+  to convergence (about 6,000 iterations) gives a mean component similarity
+  of 0.32 to the published model, with none above 0.9. The published model
+  reconstructs the three missing samples as zeros.
+- **Held-out-sample CV cannot choose a rank.** On uncentred data it picks
+  rank 3, which only reproduces each species' mean profile (flat time
+  factors). On species-centred data no rank from 1 to 20 predicts held-out
+  samples better than the species means, and neither do colony or timepoint
+  averages: sample-level noise outweighs the shared colony and time signal.
+- **Gene sparsity removes components, not genes.** At rank 3 the l1 penalty
+  leaves genes dense up to lambda 10, then switches whole components off.
+  The selected gene lambda is 0.
+- **Split-half stability** on the centred tensor finds no rank whose
+  components all reproduce (similarity > 0.9) across colony halves, with all
+  genes or the top 1,000 or 2,000 variable genes. Ranks 2-3 give the best
+  agreement (about 0.6).
+
+### Rank-3 model, species-centred, top 2,000 variable genes
+
+Three components explain 23% of the within-species, gene-centred variance.
+Similarity to refits on each of 10 colony halves is in brackets.
+
+| Component | Variance | Colonies | Time (Jan, Mar, Sep, Nov) | Top genes |
+|---|---|---|---|---|
+| 1, site (0.87) | 8% | Mahana > Manava in all three species (5-vs-5 separation in apul and peve, p = 0.008; ptua p = 0.016) | positive throughout | + MCM7, E2F8, EIF2AK3; − hemicentin-1, MMP-25, FHL2, RUNX1 |
+| 2, *A. pulchra* season (0.96) | 10% | *A. pulchra* only (Mahana 62, Manava 31; others near 0) | + Jan, Nov; − Mar, Sep | + eIF5B, DnaJC8, PHF14; − KLF5, malectin |
+| 3, outliers (0.51) | 5% | dominated by POC-52 and ACR-186 | TP1 only | not interpreted |
+
+Site could be confounded with sequencing batch; this has not been checked.
+Gene annotations are not yet tested for enrichment.
+
 ## Tests
 
 ```bash
@@ -174,7 +244,11 @@ data/raw/               downloaded files (ignored)
 data/processed/         built tensors (ignored)
 src/stdm/mosaic.py      data access, ID harmonising, sample table
 src/stdm/tensor.py      ortholog x colony x timepoint tensor
+src/stdm/barnacle/      vendored Barnacle sparse CP (masked fitting), factor match score
+src/stdm/selection.py   rank and sparsity selection
+src/stdm/reproduce.py   the talk's rank-35 model and published factors
 src/stdm/cli.py         `stdm` command
+results/                run outputs (ignored)
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold
 input-data/             synthetic test data and the VST ortholog matrix
 tests/

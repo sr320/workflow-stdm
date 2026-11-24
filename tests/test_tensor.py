@@ -158,3 +158,19 @@ def test_real_tensor():
     assert sorted(t.missing_samples()) == ["POC-201-TP4", "POR-236-TP3", "POR-236-TP4"]
     assert t.colonies.groupby(["species", "site"]).size().eq(5).all()
     assert not t.groups[["apul", "peve", "ptua"]].apply(lambda s: s.duplicated()).any().any()
+
+def test_top_variable_keeps_highest_within_species_variance():
+    import pandas as pd
+    from stdm.tensor import ExpressionTensor
+    rng = np.random.default_rng(0)
+    v = rng.normal(size=(5, 4, 2)) * np.array([0.1, 3, 0.2, 2, 0.3])[:, None, None]
+    v[:, :2] += 100  # species offset must not count as variance
+    v[0, 3, 1] = np.nan
+    t = ExpressionTensor(v, pd.DataFrame(index=[f"g{i}" for i in range(5)]),
+                         pd.DataFrame({"species": ["a", "a", "b", "b"], "site": "x"},
+                                      index=list("ABCD")), [1, 2])
+    top = t.top_variable(2)
+    assert list(top.groups.index) == ["g1", "g3"]
+    assert top.values.shape == (2, 4, 2)
+    assert top.params["top_variable"] == 2
+    assert t.top_variable(10) is t

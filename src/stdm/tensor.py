@@ -79,6 +79,22 @@ class ExpressionTensor:
     def shape(self) -> tuple[int, int, int]:
         return self.values.shape
 
+    def within_species_variance(self) -> pd.Series:
+        """Per group, the mean over species of the variance across that species' samples."""
+        species = self.colonies["species"].to_numpy()
+        per = [np.nanvar(self.values[:, species == sp, :].reshape(len(self.values), -1), axis=1)
+               for sp in pd.unique(species)]
+        return pd.Series(np.mean(per, axis=0), index=self.groups.index, name="within_var")
+
+    def top_variable(self, n: int) -> "ExpressionTensor":
+        """Keep the ``n`` groups with the highest within-species variance (original order)."""
+        if n >= len(self.groups):
+            return self
+        var = self.within_species_variance().to_numpy()
+        keep = np.sort(np.argsort(-var, kind="stable")[:n])
+        return ExpressionTensor(self.values[keep], self.groups.iloc[keep], self.colonies,
+                                self.timepoints, {**self.params, "top_variable": int(n)})
+
     @property
     def mask(self) -> np.ndarray:
         """``True`` where a value was observed."""

@@ -102,6 +102,21 @@ Done (2026-11-23). Notes for phase 3:
 - Choose rank by held-out reconstruction error across random splits.
 - Choose sparsity by split-half agreement of component membership.
 
+Done (2026-11-23); details in the README's Sparse CP section. Notes for
+phase 4:
+- The talk's rank-35 model reproduces exactly but its components are not
+  stable: masked and converged, mean similarity to it is 0.32.
+- Held-out-sample CV cannot choose a rank (sample-level noise dominates), so
+  rank was chosen by split-half stability on the species-centred tensor.
+- Use the rank-3 model on the top 2,000 variable genes,
+  species-centred, with no penalties
+  (`results/centered-top2000-r3`). Component 1 is a site difference shared
+  by all species. Component 2 is an *A. pulchra* seasonal pattern. Component
+  3 is driven by outlier samples.
+- Check before interpreting component 1: whether site is confounded with
+  sequencing batch or extraction date.
+- Gene sparsity is not useful at this rank: l1 removes whole components.
+
 ### 4. Interpretation
 - Component gene lists and GO annotation.
 - Overlap with the calcification gene set.
@@ -122,7 +137,7 @@ Done (2026-11-23). Notes for phase 3:
 
 ## Open questions
 
-- Rank, sparsity level and component results presented in the talk (needed
-  as a reference point for phase 3).
-- Whether the talk's analysis code lives in `urol-e5/timeseries_molecular`
-  and should be ported here or only referenced.
+- Resolved: the talk used rank 35 with lambdas 0.2/0.1/0.05, from
+  `urol-e5/timeseries_molecular` (`M-multi-species/scripts/14.1-barnacle`).
+  Its tensor build is ported in `stdm.reproduce`; Barnacle is vendored.
+- Whether site is confounded with sequencing batch (phase 4).

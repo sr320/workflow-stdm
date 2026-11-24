@@ -342,6 +342,8 @@ def main():
     rank_parser = subparsers.add_parser(
         "select-rank", help="Stage 1: choose rank by held-out-sample CV (1-SE rule)")
     rank_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    rank_parser.add_argument("--top-variable", type=int, metavar="N",
+                             help="Keep the N groups with the highest within-species variance")
     rank_parser.add_argument("--ranks", type=int, nargs="+",
                              default=[5, 10, 15, 20, 25, 30, 35, 40])
     rank_parser.add_argument("--splits", type=int, default=5)
@@ -357,6 +359,8 @@ def main():
         "select-rank-stability",
         help="Stage 1 alternative: choose rank by split-half reproducibility of components")
     stab_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    stab_parser.add_argument("--top-variable", type=int, metavar="N",
+                             help="Keep the N groups with the highest within-species variance")
     stab_parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6, 8, 10])
     stab_parser.add_argument("--splits", type=int, default=5)
     stab_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
@@ -374,6 +378,8 @@ def main():
     lam_parser = subparsers.add_parser(
         "select-lambda", help="Stage 2: choose gene sparsity by split-half FMS (1-SE rule)")
     lam_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    lam_parser.add_argument("--top-variable", type=int, metavar="N",
+                            help="Keep the N groups with the highest within-species variance")
     lam_parser.add_argument("--rank", type=int, required=True)
     lam_parser.add_argument("--grid", type=float, nargs="+",
                             default=[0.0, 0.2, 1, 5, 25, 100, 500])
@@ -390,6 +396,8 @@ def main():
     fit_parser = subparsers.add_parser(
         "sparse-cp", help="Fit sparse CP (Barnacle) to a tensor, masking missing samples")
     fit_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    fit_parser.add_argument("--top-variable", type=int, metavar="N",
+                            help="Keep the N groups with the highest within-species variance")
     fit_parser.add_argument("--rank", type=int, required=True)
     fit_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
                             default=[0.2, 0.1, 0.05])
@@ -778,7 +786,12 @@ def run_build_tensor(args):
     print(f"  value range: {s['min']:.2f} to {s['max']:.2f}")
 
 
-def _load_expression_tensor(spec):
+def _load_expression_tensor(spec, top_variable=None):
+    t = _load_tensor_spec(spec)
+    return t.top_variable(top_variable) if top_variable else t
+
+
+def _load_tensor_spec(spec):
     from .tensor import ExpressionTensor
     if spec in ("talk", "talk-centered"):
         from .reproduce import talk_expression_tensor
@@ -828,7 +841,7 @@ def run_reproduce_talk(args):
 
 def run_select_rank(args):
     from .selection import select_rank
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank(t.values, t.colonies.species.to_numpy(), args.ranks,
@@ -843,7 +856,7 @@ def run_select_rank(args):
 
 def run_select_rank_stability(args):
     from .selection import select_rank_stability
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank_stability(
@@ -856,12 +869,15 @@ def run_select_rank_stability(args):
     _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
     print(df.groupby("rank")[["fms", "min_component", "n_reproducible", "n_above_0_5"]]
           .mean().round(3).to_string())
-    print(f"Selected rank (most reproducible components): {rank}")
+    if rank is None:
+        print(f"No rank reproduces a component (similarity > {args.threshold}) on average")
+    else:
+        print(f"Selected rank (most reproducible components): {rank}")
 
 
 def run_select_lambda(args):
     from .selection import select_lambda
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     lam, df = select_lambda(t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(),
@@ -881,7 +897,7 @@ def run_sparse_cp(args):
     import time
     from .barnacle import SparseCP
     from .reproduce import factors_to_frames
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     model = SparseCP(args.rank, args.lambdas, nonneg_modes=list(args.nonneg_modes),
