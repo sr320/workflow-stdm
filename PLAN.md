@@ -176,8 +176,18 @@ noise-injection stability selection; `results/phase5-site`.
   well. lncRNA tracks the transcriptome's main axes; cause cannot be
   separated with these data.
 
+- Gene-level methylation test (`stdm cis-meth`, `results/phase5-cis`):
+  each gene's body methylation against its own expression, with a colony
+  permutation null. Between colonies, coupling is real in all three species
+  (3-6x the expected number of strong correlations, mostly positive,
+  in weakly methylated, variable genes). Over time within a colony, only
+  *A. pulchra* shows any (12 genes at q < 0.1). Component genes are not more
+  coupled than other genes. The between-colony signal may be genotype
+  (CpG SNPs, cis-eQTL, mapping) rather than regulation.
+
 Possible next steps:
-- Predict individual component genes rather than the score, as in the talk.
+- Check the between-colony methylation-expression genes for genotype
+  effects (CpG coverage and SNP calls in the methylation data).
 - Run the *A. pulchra* timepoint component (Component_1), keeping in mind it
   is provisional.
 

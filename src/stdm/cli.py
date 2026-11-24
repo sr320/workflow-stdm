@@ -448,8 +448,23 @@ def main():
     en_parser.add_argument("--seed", type=int, default=0)
     en_parser.add_argument("--output", "-o", required=True)
 
+    cis_parser = subparsers.add_parser(
+        "cis-meth", help="Correlate each gene's body methylation with its expression")
+    cis_parser.add_argument("--species", nargs="+", default=["apul", "peve", "ptua"])
+    cis_parser.add_argument("--model", default="results/centered-top2000-r2-nobatch",
+                            help="CP model whose top-loading genes are compared with the rest")
+    cis_parser.add_argument("--top", type=int, default=200, help="Loadings per component side")
+    cis_parser.add_argument("--min-meth-sd", type=float, default=0.02,
+                            help="Minimum methylation SD across samples (fraction scale)")
+    cis_parser.add_argument("--permutations", type=int, default=200)
+    cis_parser.add_argument("--seed", type=int, default=0)
+    cis_parser.add_argument("--output", "-o", required=True)
+
     args = parser.parse_args()
 
+    if args.command == "cis-meth":
+        run_cis_meth(args)
+        return
     if args.command == "reproduce-talk":
         run_reproduce_talk(args)
     elif args.command == "select-rank":
@@ -1059,5 +1074,40 @@ def run_elastic_net(args):
                       flush=True)
     summary = pd.DataFrame(rows)
     summary.to_csv(out / "summary.csv", index=False)
+    _write_json(out / "run.json", {"args": vars(args)})
+    print(f"Saved {out}")
+
+
+def run_cis_meth(args):
+    """Gene-level methylation-expression correlations, with component gene sets."""
+    import warnings
+    import pandas as pd
+    from . import cis, mosaic
+
+    warnings.filterwarnings("ignore", category=UserWarning, module="stdm.elasticnet")
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    gf = pd.read_csv(Path(args.model) / "gene_factors.csv").set_index("group_id")
+    orth = mosaic.load_orthologs()
+    summary, sets_out = [], []
+    for sp in args.species:
+        E, M, meta = cis.load_pair(sp, min_meth_sd=args.min_meth_sd)
+        genes, null = cis.cis_correlations(E, M, meta, permutations=args.permutations,
+                                           seed=args.seed)
+        genes.to_csv(out / f"{sp}_genes.csv")
+        null.to_csv(out / f"{sp}_null.csv", index=False)
+        for row in cis.summarise(genes, null):
+            row = dict(species=sp, n_samples=len(meta), **row)
+            summary.append(row)
+            print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items()},
+                  flush=True)
+        background = set(orth.set_index("group_id")[sp].reindex(gf.index).dropna())
+        sets = cis.component_genes(gf, sp, args.top, orth)
+        cmp = cis.compare_sets(genes, sets, background)
+        if len(cmp):
+            sets_out.append(cmp.assign(species=sp))
+    pd.DataFrame(summary).to_csv(out / "summary.csv", index=False)
+    if sets_out:
+        pd.concat(sets_out).to_csv(out / "component_sets.csv", index=False)
     _write_json(out / "run.json", {"args": vars(args)})
     print(f"Saved {out}")
