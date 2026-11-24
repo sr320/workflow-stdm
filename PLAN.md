@@ -185,9 +185,19 @@ noise-injection stability selection; `results/phase5-site`.
   coupled than other genes. The between-colony signal may be genotype
   (CpG SNPs, cis-eQTL, mapping) rather than regulation.
 
+- CpG-level genotype check (`stdm cpg-check`, `results/phase5-cpg`; CpG
+  files and gene GFFs added to the manifest). In most reproducible coupled
+  genes the signal is spread across many CpGs and survives removing
+  CpGs that look like homozygous CpG-destroying variants (47/68 *A. pulchra*,
+  13/16 *P. evermanni*, 20/26 *P. tuahiniensis*). Variant-like CpGs are
+  twice as common in *A. pulchra* hit genes as in matched controls, so
+  genotype contributes there. Heterozygous variants and broader genetic
+  effects on methylation are not excluded.
+
 Possible next steps:
-- Check the between-colony methylation-expression genes for genotype
-  effects (CpG coverage and SNP calls in the methylation data).
+- Call genotypes from the WGBS reads (Biscuit or BS-SNPer) to test
+  heterozygous variants and cis genetic effects on methylation directly.
+  This needs the BAM files, which are not in the manifest.
 - Run the *A. pulchra* timepoint component (Component_1), keeping in mind it
   is provisional.
 
