@@ -443,6 +443,70 @@ uv run stdm elastic-net --component Component_2 --block-sets lncrna --adjust gen
 - One *P. evermanni* sample, POR-73-TP2, has RNA concentration recorded as
   0.0 ng/µL in the RNA metadata; worth checking with the lab.
 
+### Gene-level methylation and expression
+
+```bash
+uv run stdm cis-meth --permutations 200 --output results/phase5-cis
+```
+
+For every gene with both measurements, `cis-meth` (`stdm.cis`) correlates
+the ranks of the gene's expression with the ranks of its own gene-body
+methylation.
+
+- **Genes kept:** expressed (normalised count ≥ 10 in half the samples),
+  at most 20% missing methylation and methylation SD ≥ 2 percentage points.
+  Missing methylation is filled with the site × timepoint mean.
+- **Three levels:**
+  - `all`: all samples.
+  - `between_colony`: after removing site × timepoint means (colonies
+    differing at the same place and time).
+  - `within_colony`: after also removing colony means (a colony's methylation
+    and expression changing together over time, beyond the shared season).
+- **Null:** methylation profiles are reassigned between colonies within a site,
+  matched by timepoint, 200 times. Null correlations from all genes are pooled
+  to give per-gene p-values, followed by BH q. The global test counts genes
+  whose |r| is above the null's 99th percentile; with 200 permutations the
+  smallest p is 0.005.
+- **Component genes:** the top 200 loadings on each side of each component
+  (`results/centered-top2000-r2-nobatch`) are compared with the other genes
+  in the tensor's 2,000 (Mann-Whitney on |r|).
+
+| | *A. pulchra* | *P. evermanni* | *P. tuahiniensis* |
+|---|---|---|---|
+| Samples / genes | 40 / 8,479 | 37 / 6,828 | 32 / 4,575 |
+| Between colony: genes above null 99th pct (null median) | 463 (80)** | 245 (66)** | 137 (44)** |
+| Between colony: genes at q < 0.1 | 151 | 77 | 35 |
+| Between colony: mean r (null) | 0.057 (0.000)** | 0.031 (0.002)** | 0.031 (0.006)* |
+| Within colony: genes above null 99th pct (null median) | 291 (76)** | 59 (69) | 61 (45) |
+| Within colony: genes at q < 0.1 | 12 | 1 | 0 |
+
+(** p = 0.005, the minimum; * p = 0.015.)
+
+- **Methylation and expression co-vary between colonies in all three
+  species.** About 3–6 times more genes than expected by chance have strong
+  correlations. Significant genes are mostly positive (70–94%), and they
+  tend to be weakly methylated genes whose methylation varies more than
+  average.
+- **Over time within a colony, only *A. pulchra* shows coupling.** That
+  species has 12 genes at q < 0.1, 9 of them negative. Nothing appears in
+  *P. evermanni* or *P. tuahiniensis* beyond chance.
+- **The component genes are not special.** Their |r| is no higher than for
+  other genes, and none of the component gene sets is enriched for
+  significant genes. In *P. evermanni*, the Manava-side site genes are
+  slightly *less* coupled (p = 0.008, uncorrected).
+- **The between-colony signal may be genetic rather than regulatory.** Each
+  colony is a genet, so sequence differences between colonies can move both
+  measurements. A SNP at a CpG removes the methylation call, and a cis-eQTL
+  or a mapping difference changes counts. Over time within a colony, the
+  genotype is fixed, and that is where coupling is weak or absent.
+- **Overall:** gene-body methylation does relate to expression gene by gene,
+  mostly as stable colony differences. It does not explain the site
+  component, and there is little sign of methylation tracking expression
+  over time, except in a few *A. pulchra* genes.
+
+Outputs: `{species}_genes.csv` (r, p, q per level plus methylation mean and
+SD), `{species}_null.csv`, `summary.csv`, `component_sets.csv`.
+
 ## Tests
 
 ```bash
@@ -466,6 +530,7 @@ src/stdm/selection.py   rank and sparsity selection
 src/stdm/reproduce.py   the talk's rank-35 model and published factors
 src/stdm/interpret.py   component scores vs physiology, ITS2 and gene sets
 src/stdm/elasticnet.py  colony-held-out elastic net, permutation null, stability selection
+src/stdm/cis.py         gene-level methylation vs expression with a colony permutation null
 src/stdm/cli.py         `stdm` command
 results/                run outputs (ignored)
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold
