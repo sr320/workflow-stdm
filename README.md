@@ -390,7 +390,8 @@ minimum):
   the cleanest test of an epigenetic link, and it is negative at this sample
   size.
 - **miRNA:** a weak within-site signal in *P. evermanni* (R² 0.17, p = 0.04,
-  one of 16 tests, not corrected); nothing in *P. tuahiniensis*.
+  one of 16 tests, not corrected); nothing in *P. tuahiniensis*. It does
+  not survive the genotype-corrected rerun (R² −0.02, p = 0.24).
 
 **Is lncRNA's signal anything beyond what it shares with gene expression?**
 `--adjust` regresses every predictor on covariates before fitting (no
@@ -684,7 +685,25 @@ uv run stdm cpg-check --cis results/phase5-cis-geno --identity one-per-genotype 
   their CpGs agree in direction than in matched controls, clearly so in
   *A. pulchra*.
 
-**Elastic net:** being rerun.
+**Elastic net** (held-out R², permutation p in brackets where < 0.05;
+`results/phase5-site-geno`):
+
+| Predictors | Peve before | Peve after | Peve within site before | Peve within site after | Ptua before | Ptua after | Ptua within site before | Ptua within site after |
+|---|---|---|---|---|---|---|---|---|
+| Samples | 38 | 36 | 38 | 36 | 39 | 38 | 39 | 38 |
+| lncRNA | 0.93 (0.02) | 0.91 (0.02) | 0.62 (0.02) | 0.62 (0.02) | 0.93 (0.02) | 0.93 (0.02) | 0.75 (0.02) | 0.78 (0.02) |
+| Gene-body methylation | −0.10 | −0.15 | −0.10 | −0.03 | −0.07 | −0.22 | −1.19 | −0.04 |
+| miRNA | −0.02 | 0.01 | 0.17 (0.04) | −0.02 | −0.36 | −0.29 | −0.16 | −0.02 |
+| lncRNA + methylation | 0.91 (0.02) | 0.92 (0.02) | 0.49 (0.02) | 0.57 (0.02) | 0.96 (0.02) | 0.95 (0.02) | 0.65 (0.02) | 0.44 (0.04) |
+
+Sample counts are for lncRNA; methylation and miRNA have a few fewer.
+p = 0.02 is the smallest possible with 50 permutations.
+
+- **lncRNA still predicts the site component**, raw and within site, at the
+  same accuracy.
+- **Gene-body methylation still predicts nothing** (all p ≥ 0.14).
+- **The weak *P. evermanni* miRNA signal is gone** (within site R² −0.02,
+  p = 0.24), so it should not be counted as a finding.
 
 ## Tests
 

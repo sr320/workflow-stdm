@@ -166,7 +166,7 @@ noise-injection stability selection; `results/phase5-site`.
   mostly reflects shared biology and technical variation.
 - Gene-body methylation, the only independent assay, predicts nothing.
 - miRNA: weak within-site signal in *P. evermanni* only (p = 0.04,
-  uncorrected).
+  uncorrected); gone after the genotype correction below.
 
 - Shared-variation check (`--adjust`): removing technical covariates
   (library sizes, RNA concentration, plate, extraction batch) leaves the
@@ -206,7 +206,10 @@ SNP-based genotype table from timeseries_molecular script 58):
 - The 12 *A. pulchra* within-colony genes and the *A. pulchra* enrichment
   of variant-like CpGs both disappear: they came from the swapped and
   cloned colonies.
-- Elastic net rerun in progress.
+- Elastic net (`results/phase5-site-geno`): lncRNA still predicts the site
+  component (within site R² 0.62 *P. evermanni*, 0.78 *P. tuahiniensis*),
+  methylation still predicts nothing, and the weak *P. evermanni* miRNA
+  signal disappears (p = 0.24).
 
 Possible next steps:
 - Test heterozygous variants and cis genetic effects on methylation
