@@ -293,10 +293,133 @@ def main():
     run_parser.add_argument("--no-standardize", dest="standardize", action="store_false",
                            help="Skip standardization")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    
+
+    # MOSAiC data commands
+    fetch_parser = subparsers.add_parser(
+        "fetch", help="Download MOSAiC data files listed in data/manifest.csv")
+    fetch_parser.add_argument("--species", nargs="+", choices=["apul", "peve", "ptua", "multi"])
+    fetch_parser.add_argument("--data-type", nargs="+", dest="data_types",
+                              help="e.g. gene mirna lncrna gene_meth orthologs physiology")
+    fetch_parser.add_argument("--key", nargs="+", dest="keys", help="Manifest keys, e.g. apul_gene")
+    fetch_parser.add_argument("--include-large", action="store_true",
+                              help="Also fetch ~1 GB CpG-level methylation files")
+    fetch_parser.add_argument("--force", action="store_true", help="Re-download cached files")
+    fetch_parser.add_argument("--update-checksums", action="store_true",
+                              help="Accept changed upstream files into data/checksums.csv")
+    fetch_parser.add_argument("--list", action="store_true", help="List manifest entries and exit")
+
+    samples_parser = subparsers.add_parser(
+        "samples", help="Build the sample metadata table from cached MOSAiC files")
+    samples_parser.add_argument("--output", "-o", help="Output CSV (default: data/samples.csv)")
+
+    tensor_parser = subparsers.add_parser(
+        "build-tensor", help="Build the ortholog x colony x timepoint tensor from MOSAiC counts")
+    tensor_parser.add_argument("--normalization", choices=["log2-mor", "vst-joint"],
+                               default="log2-mor",
+                               help="log2-mor: per-species median-of-ratios + log2 (default); "
+                                    "vst-joint: DESeq2 VST across species, as in the 2026 talk")
+    tensor_parser.add_argument("--center", choices=["none", "species"], default="none",
+                               help="Subtract each group's mean within each species")
+    tensor_parser.add_argument("--min-count", type=float, default=10,
+                               help="Normalised count threshold for keeping a group (default 10)")
+    tensor_parser.add_argument("--min-fraction", type=float, default=0.5,
+                               help="Fraction of samples per species that must reach --min-count")
+    tensor_parser.add_argument("--output", "-o",
+                               help="Output directory (default: data/processed/tensor-<normalization>"
+                                    "[-centered])")
+
+    tensor_help = ("'talk' for the talk's VST matrix (missing samples masked), 'talk-centered' "
+                   "for the same with each species' gene means removed, or a directory "
+                   "written by build-tensor")
+    nonneg_help = ("Modes constrained non-negative (0 gene, 1 colony, 2 time); pass the flag "
+                   "with no values for none, as centred data needs")
+
+    repro_parser = subparsers.add_parser(
+        "reproduce-talk", help="Refit the talk's rank-35 Barnacle model and compare to published factors")
+    repro_parser.add_argument("--output", "-o", default="results/reproduce-talk")
+    repro_parser.add_argument("--n-jobs", type=int, default=3, help="Parallel initialisations")
+
+    rank_parser = subparsers.add_parser(
+        "select-rank", help="Stage 1: choose rank by held-out-sample CV (1-SE rule)")
+    rank_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    rank_parser.add_argument("--ranks", type=int, nargs="+",
+                             default=[5, 10, 15, 20, 25, 30, 35, 40])
+    rank_parser.add_argument("--splits", type=int, default=5)
+    rank_parser.add_argument("--test-fraction", type=float, default=0.5)
+    rank_parser.add_argument("--max-iter", type=int, default=1000)
+    rank_parser.add_argument("--tol", type=float, default=1e-5)
+    rank_parser.add_argument("--seed", type=int, default=0)
+    rank_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
+    rank_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
+    rank_parser.add_argument("--output", "-o", default="results/select-rank")
+
+    stab_parser = subparsers.add_parser(
+        "select-rank-stability",
+        help="Stage 1 alternative: choose rank by split-half reproducibility of components")
+    stab_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    stab_parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6, 8, 10])
+    stab_parser.add_argument("--splits", type=int, default=5)
+    stab_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
+                             default=[0.0, 0.0, 0.0])
+    stab_parser.add_argument("--n-init", type=int, default=3, help="Initialisations per half")
+    stab_parser.add_argument("--threshold", type=float, default=0.9,
+                             help="Similarity above which a component counts as reproduced")
+    stab_parser.add_argument("--max-iter", type=int, default=2000)
+    stab_parser.add_argument("--tol", type=float, default=1e-6)
+    stab_parser.add_argument("--seed", type=int, default=0)
+    stab_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
+    stab_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
+    stab_parser.add_argument("--output", "-o", default="results/select-rank-stability")
+
+    lam_parser = subparsers.add_parser(
+        "select-lambda", help="Stage 2: choose gene sparsity by split-half FMS (1-SE rule)")
+    lam_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    lam_parser.add_argument("--rank", type=int, required=True)
+    lam_parser.add_argument("--grid", type=float, nargs="+",
+                            default=[0.0, 0.2, 1, 5, 25, 100, 500])
+    lam_parser.add_argument("--lambda-colony", type=float, default=0.1)
+    lam_parser.add_argument("--lambda-time", type=float, default=0.05)
+    lam_parser.add_argument("--splits", type=int, default=4)
+    lam_parser.add_argument("--max-iter", type=int, default=1000)
+    lam_parser.add_argument("--tol", type=float, default=1e-5)
+    lam_parser.add_argument("--seed", type=int, default=0)
+    lam_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
+    lam_parser.add_argument("--workers", type=int, help="Parallel fits (default: cores - 1)")
+    lam_parser.add_argument("--output", "-o", default="results/select-lambda")
+
+    fit_parser = subparsers.add_parser(
+        "sparse-cp", help="Fit sparse CP (Barnacle) to a tensor, masking missing samples")
+    fit_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    fit_parser.add_argument("--rank", type=int, required=True)
+    fit_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
+                            default=[0.2, 0.1, 0.05])
+    fit_parser.add_argument("--n-init", type=int, default=3)
+    fit_parser.add_argument("--n-jobs", type=int, default=3)
+    fit_parser.add_argument("--max-iter", type=int, default=2000)
+    fit_parser.add_argument("--tol", type=float, default=1e-5)
+    fit_parser.add_argument("--seed", type=int, default=81)
+    fit_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
+    fit_parser.add_argument("--output", "-o", required=True)
+
     args = parser.parse_args()
-    
-    if args.command == "generate":
+
+    if args.command == "reproduce-talk":
+        run_reproduce_talk(args)
+    elif args.command == "select-rank":
+        run_select_rank(args)
+    elif args.command == "select-rank-stability":
+        run_select_rank_stability(args)
+    elif args.command == "select-lambda":
+        run_select_lambda(args)
+    elif args.command == "sparse-cp":
+        run_sparse_cp(args)
+    elif args.command == "build-tensor":
+        run_build_tensor(args)
+    elif args.command == "fetch":
+        run_fetch(args)
+    elif args.command == "samples":
+        run_samples(args)
+    elif args.command == "generate":
         run_generate(args)
     elif args.command == "decompose":
         run_decompose(args)
@@ -599,3 +722,191 @@ def run_workflow(args):
 
 if __name__ == "__main__":
     main()
+
+
+def run_fetch(args):
+    """Download MOSAiC files into data/raw/."""
+    from . import mosaic
+
+    manifest = mosaic.load_manifest()
+    if args.list:
+        for e in manifest.values():
+            cached = "cached" if mosaic.raw_path(e).exists() else ""
+            large = "large" if e.large else ""
+            print(f"{e.key:24s} {e.kind:6s} {large:5s} {cached:6s} {e.description}")
+        return
+    entries = mosaic.select(manifest, species=args.species, data_types=args.data_types,
+                            keys=args.keys, include_large=args.include_large)
+    if not entries:
+        print("Nothing matched.")
+        return
+    mosaic.fetch(entries, force=args.force, update_checksums=args.update_checksums)
+    skipped = [e.key for e in manifest.values()
+               if e.large and e not in entries and not args.keys]
+    if skipped and not args.include_large:
+        print(f"Skipped large files (use --include-large): {', '.join(skipped)}")
+
+
+def run_samples(args):
+    """Write the sample metadata table and print data-type coverage."""
+    from . import mosaic
+
+    meta = mosaic.build_sample_metadata()
+    out = Path(args.output) if args.output else mosaic.default_data_dir() / "samples.csv"
+    meta.to_csv(out, index=False)
+    print(f"Wrote {len(meta)} samples to {out}")
+    has = [c for c in meta.columns if c.startswith("has_")]
+    if has:
+        print(meta.groupby("species")[has].sum().to_string())
+
+
+def run_build_tensor(args):
+    """Build and save the expression tensor."""
+    from . import mosaic
+    from .tensor import build_expression_tensor
+
+    t = build_expression_tensor(normalization=args.normalization, center=args.center,
+                                min_count=args.min_count, min_fraction=args.min_fraction)
+    name = f"tensor-{args.normalization}" + ("-centered" if args.center == "species" else "")
+    out = Path(args.output) if args.output else mosaic.default_data_dir() / "processed" / name
+    t.save(out)
+    s = t.summary()
+    print(f"Saved {out}")
+    print(f"  shape (groups x colonies x timepoints): {tuple(s['shape'])}")
+    print(f"  group filtering: {s['group_counts']}")
+    print(f"  missing samples (NaN): {', '.join(s['missing_samples']) or 'none'}")
+    print(f"  value range: {s['min']:.2f} to {s['max']:.2f}")
+
+
+def _load_expression_tensor(spec):
+    from .tensor import ExpressionTensor
+    if spec in ("talk", "talk-centered"):
+        from .reproduce import talk_expression_tensor
+        t = talk_expression_tensor(Path("input-data/vst_counts_matrix.csv"))
+        if spec == "talk-centered":
+            from .tensor import center_by_species
+            t.values = center_by_species(t.values, t.colonies.species.to_numpy())
+            t.params = {**t.params, "center": "species"}
+        return t
+    return ExpressionTensor.load(Path(spec))
+
+
+def _write_json(path, obj):
+    with open(path, "w") as fh:
+        json.dump(obj, fh, indent=2, default=str)
+
+
+def run_reproduce_talk(args):
+    """Refit the talk model on the talk tensor and compare with published factors."""
+    import time
+    from . import mosaic
+    from .reproduce import (TALK_PARAMS, compare_factors, factors_to_frames, fetch_published,
+                            fit_talk_model, talk_tensor)
+
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    tensor, groups, colonies = talk_tensor(Path("input-data/vst_counts_matrix.csv"))
+    print(f"Talk tensor {tensor.shape}; fitting rank {TALK_PARAMS['rank']} "
+          f"with {TALK_PARAMS['n_initializations']} initialisations ...")
+    t0 = time.time()
+    model = fit_talk_model(tensor, verbose=1, n_jobs=args.n_jobs)
+    ours = factors_to_frames(model.decomposition_.factors, groups, colonies)
+    for name, df in ours.items():
+        df.to_csv(out / f"{name}_factors.csv")
+    published = fetch_published(mosaic.default_data_dir() / "raw" / "published-talk-rank35")
+    cmp = compare_factors(ours, published)
+    cmp.to_csv(out / "comparison.csv", index=False)
+    _write_json(out / "run.json", {
+        "params": TALK_PARAMS, "seconds": time.time() - t0,
+        "final_losses": [l[-1] for l in model.candidate_losses_],
+        "iterations": [len(l) for l in model.candidate_losses_],
+        "mean_similarity": float(cmp.similarity.mean())})
+    print(f"Saved {out}")
+    print(f"  mean matched similarity to published: {cmp.similarity.mean():.3f}")
+    print(cmp.round(3).to_string(index=False))
+
+
+def run_select_rank(args):
+    from .selection import select_rank
+    t = _load_expression_tensor(args.tensor)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    rank, df = select_rank(t.values, t.colonies.species.to_numpy(), args.ranks,
+                           n_splits=args.splits, test_fraction=args.test_fraction,
+                           nonneg_modes=tuple(args.nonneg_modes), n_iter_max=args.max_iter,
+                           tol=args.tol, seed=args.seed, workers=args.workers)
+    df.to_csv(out / "cv.csv", index=False)
+    _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
+    print(df.groupby("rank")[["test_sse", "test_r2"]].agg(["mean", "std"]).round(4).to_string())
+    print(f"Selected rank (1-SE rule): {rank}")
+
+
+def run_select_rank_stability(args):
+    from .selection import select_rank_stability
+    t = _load_expression_tensor(args.tensor)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    rank, df = select_rank_stability(
+        t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(), args.ranks,
+        n_splits=args.splits, lambdas=tuple(args.lambdas),
+        nonneg_modes=tuple(args.nonneg_modes), n_initializations=args.n_init,
+        threshold=args.threshold, n_iter_max=args.max_iter, tol=args.tol, seed=args.seed,
+        workers=args.workers)
+    df.to_csv(out / "stability.csv", index=False)
+    _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
+    print(df.groupby("rank")[["fms", "min_component", "n_reproducible", "n_above_0_5"]]
+          .mean().round(3).to_string())
+    print(f"Selected rank (most reproducible components): {rank}")
+
+
+def run_select_lambda(args):
+    from .selection import select_lambda
+    t = _load_expression_tensor(args.tensor)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    lam, df = select_lambda(t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(),
+                            rank=args.rank, lambda_grid=args.grid,
+                            fixed_lambdas=(None, args.lambda_colony, args.lambda_time),
+                            n_splits=args.splits, nonneg_modes=tuple(args.nonneg_modes),
+                            n_iter_max=args.max_iter, tol=args.tol,
+                            seed=args.seed, workers=args.workers)
+    df.to_csv(out / "fms.csv", index=False)
+    _write_json(out / "selection.json", {"selected_lambda_gene": lam, "args": vars(args)})
+    print(df.groupby("lam")[["fms", "gene_zero_fraction", "empty_components"]]
+          .agg(["mean", "std"]).round(3).to_string())
+    print(f"Selected gene lambda (1-SE rule): {lam}")
+
+
+def run_sparse_cp(args):
+    import time
+    from .barnacle import SparseCP
+    from .reproduce import factors_to_frames
+    t = _load_expression_tensor(args.tensor)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    model = SparseCP(args.rank, args.lambdas, nonneg_modes=list(args.nonneg_modes),
+                     n_initializations=args.n_init,
+                     random_state=args.seed, n_iter_max=args.max_iter, tol=args.tol)
+    t0 = time.time()
+    for old in out.glob("progress-init*.tsv"):
+        old.unlink()
+    print(f"Fitting rank {args.rank}, lambdas {args.lambdas}, {args.n_init} initialisations, "
+          f"up to {args.max_iter} iterations; progress in {out}/progress-init*.tsv", flush=True)
+    model.fit_transform(t.values, mask=t.mask, n_jobs=args.n_jobs, verbose=1, log_dir=out)
+    frames = factors_to_frames(model.decomposition_.factors, list(t.groups.index),
+                               list(t.colonies.index))
+    for name, df in frames.items():
+        df.index.name = {"gene": "group_id", "sample": "colony_id", "time": "timepoint"}[name]
+        df.to_csv(out / f"{'colony' if name == 'sample' else name}_factors.csv")
+    t.colonies.to_csv(out / "colonies.csv")
+    _write_json(out / "run.json", {
+        "args": vars(args), "tensor_params": t.params, "seconds": time.time() - t0,
+        "final_losses": [l[-1] for l in model.candidate_losses_],
+        "iterations": [len(l) for l in model.candidate_losses_],
+        "converged": [len(l) < args.max_iter or
+                      abs(l[-2] - l[-1]) / max(l[-1], 1) < args.tol
+                      for l in model.candidate_losses_],
+        "best_initialization": model._best + 1,
+        "gene_zero_fraction": float((frames["gene"].to_numpy() == 0).mean())})
+    np.savez(out / "losses.npz", *[np.asarray(l) for l in model.candidate_losses_])
+    print(f"Saved {out}")

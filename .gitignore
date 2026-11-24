@@ -210,3 +210,16 @@ __marimo__/
 example_results/
 .Rproj.user
 .DS_Store
+
+# Run outputs (regenerate; never commit)
+results/
+code/results/
+*.npy
+
+# MOSAiC download cache and derived tensors (see `stdm fetch`, `stdm build-tensor`)
+data/raw/
+data/processed/
+
+# R session clutter
+.Rhistory
+.RData

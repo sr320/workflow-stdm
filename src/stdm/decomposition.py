@@ -75,28 +75,30 @@ class SparseTensorDecomposer:
         sparse_tensor = tensor.copy()
         sparse_tensor[np.abs(sparse_tensor) < self.sparsity_threshold] = 0
         
-        # Normalize if requested
+        # Normalize if requested. The scale is kept so reconstruct() returns
+        # values on the same scale as the input tensor.
+        self.scale_ = 1.0
         if self.normalize:
-            sparse_tensor = self._normalize_tensor(sparse_tensor)
-        
+            sparse_tensor, self.scale_ = self._normalize_tensor(sparse_tensor)
+
         # Perform decomposition
         if self.method == "parafac":
             self._fit_parafac(sparse_tensor, n_iter_max, tol, verbose)
         elif self.method == "tucker":
             self._fit_tucker(sparse_tensor, n_iter_max, tol, verbose)
-        
-        # Calculate reconstruction error
+
+        # Relative error against the tensor the caller passed in
         reconstructed = self.reconstruct()
-        self.reconstruction_error_ = np.linalg.norm(sparse_tensor - reconstructed) / np.linalg.norm(sparse_tensor)
-        
+        self.reconstruction_error_ = np.linalg.norm(tensor - reconstructed) / np.linalg.norm(tensor)
+
         return self
-    
-    def _normalize_tensor(self, tensor: np.ndarray) -> np.ndarray:
-        """Normalize tensor to have unit Frobenius norm."""
-        norm = np.linalg.norm(tensor)
+
+    def _normalize_tensor(self, tensor: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Scale tensor to unit Frobenius norm; return it and the scale used."""
+        norm = float(np.linalg.norm(tensor))
         if norm > 0:
-            return tensor / norm
-        return tensor
+            return tensor / norm, norm
+        return tensor, 1.0
     
     def _fit_parafac(self, tensor: np.ndarray, n_iter_max: int, 
                      tol: float, verbose: bool) -> None:
@@ -149,8 +151,8 @@ class SparseTensorDecomposer:
         elif self.method == "tucker":
             # Tucker reconstruction: core tensor times factor matrices
             reconstructed = tl.tucker_to_tensor((self.core_, self.factors_))
-        
-        return reconstructed
+
+        return reconstructed * getattr(self, "scale_", 1.0)
     
     def get_gene_factors(self) -> np.ndarray:
         """
