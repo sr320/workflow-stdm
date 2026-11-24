@@ -183,7 +183,7 @@ def select_rank_stability(tensor: np.ndarray, species: Sequence[str], site: Sequ
                           lambdas=(0.0, 0.0, 0.0), nonneg_modes=(0,),
                           n_initializations: int = 3, threshold: float = 0.9,
                           n_iter_max: int = 2000, tol: float = 1e-6, seed: int = 0,
-                          workers: Optional[int] = None) -> tuple[int, pd.DataFrame]:
+                          workers: Optional[int] = None) -> tuple[Optional[int], pd.DataFrame]:
     """Choose rank by split-half reproducibility of gene and time factors.
 
     For each rank and split, the model is fit separately to two site-balanced
@@ -199,7 +199,7 @@ def select_rank_stability(tensor: np.ndarray, species: Sequence[str], site: Sequ
 
     Returns ``(rank, df)``: the rank with the most reproducible components
     (mean count of components with similarity above ``threshold``; ties go
-    to the smaller rank), and one row per rank and split with the mean FMS,
+    to the smaller rank; None if no rank averages at least one), and one row per rank and split with the mean FMS,
     the worst component, and the number of components above ``threshold``
     and above 0.5. A mean-FMS cutoff is not used because a too-large rank
     can still score well when its extra components happen to agree, while
@@ -227,9 +227,15 @@ def select_rank_stability(tensor: np.ndarray, species: Sequence[str], site: Sequ
     return stability_rank(df), df
 
 
-def stability_rank(df: pd.DataFrame) -> int:
-    """Rank with the highest mean ``n_reproducible``; ties go to the smaller rank."""
+def stability_rank(df: pd.DataFrame, min_reproducible: float = 1.0) -> Optional[int]:
+    """Rank with the highest mean ``n_reproducible``; ties go to the smaller rank.
+
+    Returns None when no rank reproduces at least ``min_reproducible``
+    components on average, since a pick among ranks that all fail is noise.
+    """
     means = df.groupby("rank")["n_reproducible"].mean()
+    if means.max() < min_reproducible:
+        return None
     return int(means.index[np.isclose(means, means.max())].min())
 
 

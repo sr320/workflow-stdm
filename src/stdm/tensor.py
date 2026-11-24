@@ -79,6 +79,72 @@ class ExpressionTensor:
     def shape(self) -> tuple[int, int, int]:
         return self.values.shape
 
+    def within_species_variance(self) -> pd.Series:
+        """Per group, the mean over species of the variance across that species' samples."""
+        species = self.colonies["species"].to_numpy()
+        per = [np.nanvar(self.values[:, species == sp, :].reshape(len(self.values), -1), axis=1)
+               for sp in pd.unique(species)]
+        return pd.Series(np.mean(per, axis=0), index=self.groups.index, name="within_var")
+
+    def remove_batch(self, batch: pd.Series, protect: Sequence[str] = ("site", "timepoint"),
+                     reference: str = "undated") -> "ExpressionTensor":
+        """Subtract per-gene batch effects, estimated within each species.
+
+        Like limma's ``removeBatchEffect`` with a design: for each species,
+        every group's observed values are regressed on an intercept, the
+        ``protect`` factors (``site``, ``timepoint``) and batch (treatment
+        coding against ``reference``), and only the batch terms are
+        subtracted. Protecting site and timepoint keeps their effects from
+        being removed where they overlap with batch. ``batch`` maps sample
+        IDs (``ACR-139-TP1``) to labels. Raises if a batch effect cannot be
+        separated from the protected factors in some species.
+        """
+        values = self.values.copy()
+        species = self.colonies["species"].to_numpy()
+        removed = {}
+        for sp in pd.unique(species):
+            cols = np.flatnonzero(species == sp)
+            cells = [(j, k) for j in cols for k in range(len(self.timepoints))
+                     if not np.isnan(values[0, j, k])]
+            ids = [f"{self.colonies.index[j]}-TP{self.timepoints[k]}" for j, k in cells]
+            missing = [i for i in ids if i not in batch.index]
+            if missing:
+                raise ValueError(f"no batch label for {missing[:3]}")
+            frame = pd.DataFrame({
+                "site": [self.colonies["site"].iloc[j] for j, _ in cells],
+                "timepoint": [str(self.timepoints[k]) for _, k in cells],
+                "batch": batch.loc[ids].astype(str).to_numpy(),
+            })
+            levels = [b for b in sorted(frame["batch"].unique()) if b != reference]
+            if len(levels) == len(frame["batch"].unique()):  # reference level absent
+                levels = levels[1:]
+            if not levels:
+                continue
+            keep = pd.get_dummies(frame[list(protect)], drop_first=True, dtype=float)
+            bat = pd.DataFrame({f"batch_{b}": (frame["batch"] == b).astype(float) for b in levels})
+            design = np.column_stack([np.ones(len(frame)), keep.to_numpy(), bat.to_numpy()])
+            if np.linalg.matrix_rank(design) < design.shape[1]:
+                raise ValueError(f"{sp}: batch is confounded with {list(protect)}; "
+                                 "its effect cannot be estimated")
+            Y = np.stack([values[:, j, k] for j, k in cells], axis=1)  # groups x samples
+            coef, *_ = np.linalg.lstsq(design, Y.T, rcond=None)
+            effect = bat.to_numpy() @ coef[-len(levels):]  # samples x groups
+            for (j, k), e in zip(cells, effect):
+                values[:, j, k] -= e
+            removed[sp] = levels
+        return ExpressionTensor(values, self.groups, self.colonies, self.timepoints,
+                                {**self.params, "batch_removed": removed,
+                                 "batch_protect": list(protect)})
+
+    def top_variable(self, n: int) -> "ExpressionTensor":
+        """Keep the ``n`` groups with the highest within-species variance (original order)."""
+        if n >= len(self.groups):
+            return self
+        var = self.within_species_variance().to_numpy()
+        keep = np.sort(np.argsort(-var, kind="stable")[:n])
+        return ExpressionTensor(self.values[keep], self.groups.iloc[keep], self.colonies,
+                                self.timepoints, {**self.params, "top_variable": int(n)})
+
     @property
     def mask(self) -> np.ndarray:
         """``True`` where a value was observed."""

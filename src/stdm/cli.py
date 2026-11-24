@@ -342,6 +342,11 @@ def main():
     rank_parser = subparsers.add_parser(
         "select-rank", help="Stage 1: choose rank by held-out-sample CV (1-SE rule)")
     rank_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    rank_parser.add_argument("--remove-batch", action="store_true",
+                             help="Remove RNA extraction batch effects within species, "
+                             "protecting site and timepoint (before --top-variable)")
+    rank_parser.add_argument("--top-variable", type=int, metavar="N",
+                             help="Keep the N groups with the highest within-species variance")
     rank_parser.add_argument("--ranks", type=int, nargs="+",
                              default=[5, 10, 15, 20, 25, 30, 35, 40])
     rank_parser.add_argument("--splits", type=int, default=5)
@@ -357,6 +362,11 @@ def main():
         "select-rank-stability",
         help="Stage 1 alternative: choose rank by split-half reproducibility of components")
     stab_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    stab_parser.add_argument("--remove-batch", action="store_true",
+                             help="Remove RNA extraction batch effects within species, "
+                             "protecting site and timepoint (before --top-variable)")
+    stab_parser.add_argument("--top-variable", type=int, metavar="N",
+                             help="Keep the N groups with the highest within-species variance")
     stab_parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6, 8, 10])
     stab_parser.add_argument("--splits", type=int, default=5)
     stab_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
@@ -374,6 +384,11 @@ def main():
     lam_parser = subparsers.add_parser(
         "select-lambda", help="Stage 2: choose gene sparsity by split-half FMS (1-SE rule)")
     lam_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    lam_parser.add_argument("--remove-batch", action="store_true",
+                            help="Remove RNA extraction batch effects within species, "
+                            "protecting site and timepoint (before --top-variable)")
+    lam_parser.add_argument("--top-variable", type=int, metavar="N",
+                            help="Keep the N groups with the highest within-species variance")
     lam_parser.add_argument("--rank", type=int, required=True)
     lam_parser.add_argument("--grid", type=float, nargs="+",
                             default=[0.0, 0.2, 1, 5, 25, 100, 500])
@@ -390,6 +405,11 @@ def main():
     fit_parser = subparsers.add_parser(
         "sparse-cp", help="Fit sparse CP (Barnacle) to a tensor, masking missing samples")
     fit_parser.add_argument("--tensor", default="talk", help=tensor_help)
+    fit_parser.add_argument("--remove-batch", action="store_true",
+                            help="Remove RNA extraction batch effects within species, "
+                            "protecting site and timepoint (before --top-variable)")
+    fit_parser.add_argument("--top-variable", type=int, metavar="N",
+                            help="Keep the N groups with the highest within-species variance")
     fit_parser.add_argument("--rank", type=int, required=True)
     fit_parser.add_argument("--lambdas", type=float, nargs=3, metavar=("GENE", "COLONY", "TIME"),
                             default=[0.2, 0.1, 0.05])
@@ -400,6 +420,13 @@ def main():
     fit_parser.add_argument("--seed", type=int, default=81)
     fit_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
     fit_parser.add_argument("--output", "-o", required=True)
+
+    int_parser = subparsers.add_parser(
+        "interpret", help="Relate a fitted model's components to physiology, ITS2 and calcification genes")
+    int_parser.add_argument("--model", required=True, help="Directory written by sparse-cp")
+    int_parser.add_argument("--output", "-o", required=True)
+    int_parser.add_argument("--top", type=int, default=200,
+                            help="Loadings per side compared with the calcification gene set")
 
     args = parser.parse_args()
 
@@ -413,6 +440,8 @@ def main():
         run_select_lambda(args)
     elif args.command == "sparse-cp":
         run_sparse_cp(args)
+    elif args.command == "interpret":
+        run_interpret(args)
     elif args.command == "build-tensor":
         run_build_tensor(args)
     elif args.command == "fetch":
@@ -778,7 +807,21 @@ def run_build_tensor(args):
     print(f"  value range: {s['min']:.2f} to {s['max']:.2f}")
 
 
-def _load_expression_tensor(spec):
+def _load_expression_tensor(spec, top_variable=None, remove_batch=False):
+    t = _load_tensor_spec(spec)
+    if remove_batch:
+        from . import mosaic
+        meta = mosaic.build_sample_metadata()
+        if "extraction_batch" not in meta:
+            raise SystemExit("--remove-batch needs the RNA metadata: stdm fetch --key multi_rna_metadata")
+        t = t.remove_batch(meta.set_index("sample_id")["extraction_batch"])
+        if t.params.get("center") == "species":
+            from .tensor import center_by_species
+            t.values = center_by_species(t.values, t.colonies.species.to_numpy())
+    return t.top_variable(top_variable) if top_variable else t
+
+
+def _load_tensor_spec(spec):
     from .tensor import ExpressionTensor
     if spec in ("talk", "talk-centered"):
         from .reproduce import talk_expression_tensor
@@ -828,7 +871,7 @@ def run_reproduce_talk(args):
 
 def run_select_rank(args):
     from .selection import select_rank
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank(t.values, t.colonies.species.to_numpy(), args.ranks,
@@ -843,7 +886,7 @@ def run_select_rank(args):
 
 def run_select_rank_stability(args):
     from .selection import select_rank_stability
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank_stability(
@@ -856,12 +899,15 @@ def run_select_rank_stability(args):
     _write_json(out / "selection.json", {"selected_rank": rank, "args": vars(args)})
     print(df.groupby("rank")[["fms", "min_component", "n_reproducible", "n_above_0_5"]]
           .mean().round(3).to_string())
-    print(f"Selected rank (most reproducible components): {rank}")
+    if rank is None:
+        print(f"No rank reproduces a component (similarity > {args.threshold}) on average")
+    else:
+        print(f"Selected rank (most reproducible components): {rank}")
 
 
 def run_select_lambda(args):
     from .selection import select_lambda
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     lam, df = select_lambda(t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(),
@@ -881,7 +927,7 @@ def run_sparse_cp(args):
     import time
     from .barnacle import SparseCP
     from .reproduce import factors_to_frames
-    t = _load_expression_tensor(args.tensor)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     model = SparseCP(args.rank, args.lambdas, nonneg_modes=list(args.nonneg_modes),
@@ -910,3 +956,35 @@ def run_sparse_cp(args):
         "gene_zero_fraction": float((frames["gene"].to_numpy() == 0).mean())})
     np.savez(out / "losses.npz", *[np.asarray(l) for l in model.candidate_losses_])
     print(f"Saved {out}")
+
+
+def run_interpret(args):
+    """Rebuild the model's tensor from its run.json and test its components."""
+    import pandas as pd
+    from . import interpret
+    model = Path(args.model)
+    run = json.loads((model / "run.json").read_text())["args"]
+    t = _load_expression_tensor(run["tensor"], run.get("top_variable"), run.get("remove_batch", False))
+    genes = pd.read_csv(model / "gene_factors.csv", index_col=0)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    scores = interpret.sample_scores(t, genes)
+    scores.to_csv(out / "sample_scores.csv", index=False)
+    phys = interpret.load_physiology()[interpret.PHYSIOLOGY_VARS].apply(pd.to_numeric, errors="coerce")
+    tables = {
+        "physiology_associations": interpret.associate(scores, phys, genes.columns),
+        "its2_associations": interpret.associate(scores, interpret.load_its2(), genes.columns),
+        "calcification_overlap": interpret.gene_set_test(genes, interpret.calcification_groups(),
+                                                         top=args.top),
+    }
+    for name, df in tables.items():
+        df.to_csv(out / f"{name}.csv", index=False)
+    print(f"Saved {out}")
+    for name in ("physiology_associations", "its2_associations"):
+        df = tables[name]
+        hits = df[df[["q", "q_within_site", "q_within_site_tp"]].min(axis=1) < 0.1]
+        print(f"\n{name}: {len(hits)} of {len(df)} tests with any q < 0.1")
+        if len(hits):
+            print(hits.round(4).to_string(index=False))
+    print("\ncalcification_overlap:")
+    print(tables["calcification_overlap"].round(4).to_string(index=False))

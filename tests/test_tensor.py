@@ -158,3 +158,71 @@ def test_real_tensor():
     assert sorted(t.missing_samples()) == ["POC-201-TP4", "POR-236-TP3", "POR-236-TP4"]
     assert t.colonies.groupby(["species", "site"]).size().eq(5).all()
     assert not t.groups[["apul", "peve", "ptua"]].apply(lambda s: s.duplicated()).any().any()
+
+def test_top_variable_keeps_highest_within_species_variance():
+    import pandas as pd
+    from stdm.tensor import ExpressionTensor
+    rng = np.random.default_rng(0)
+    v = rng.normal(size=(5, 4, 2)) * np.array([0.1, 3, 0.2, 2, 0.3])[:, None, None]
+    v[:, :2] += 100  # species offset must not count as variance
+    v[0, 3, 1] = np.nan
+    t = ExpressionTensor(v, pd.DataFrame(index=[f"g{i}" for i in range(5)]),
+                         pd.DataFrame({"species": ["a", "a", "b", "b"], "site": "x"},
+                                      index=list("ABCD")), [1, 2])
+    top = t.top_variable(2)
+    assert list(top.groups.index) == ["g1", "g3"]
+    assert top.values.shape == (2, 4, 2)
+    assert top.params["top_variable"] == 2
+    assert t.top_variable(10) is t
+
+
+def _batch_fixture():
+    from stdm.tensor import ExpressionTensor
+    rng = np.random.default_rng(1)
+    colonies = pd.DataFrame({"species": ["a"] * 4 + ["b"] * 4,
+                             "site": ["x", "x", "y", "y"] * 2}, index=[f"C-{i}" for i in range(8)])
+    v = rng.normal(size=(6, 8, 2))
+    v[:, colonies.site == "y", :] += 2.0          # site effect, must be kept
+    v[:, :, 1] += 1.0                             # time effect, must be kept
+    labels = {f"C-{j}-TP{t}": "undated" for j in range(8) for t in (1, 2)}
+    for s in ("C-0-TP1", "C-2-TP2", "C-4-TP1", "C-6-TP2"):
+        labels[s] = "late"
+    shift = np.zeros_like(v)
+    for s in ("C-0-TP1", "C-2-TP2", "C-4-TP1", "C-6-TP2"):
+        j, t = int(s.split("-")[1]), int(s[-1]) - 1
+        shift[:, j, t] = 5.0
+    t = ExpressionTensor(v + shift, pd.DataFrame(index=[f"g{i}" for i in range(6)]),
+                         colonies, [1, 2])
+    return t, v, pd.Series(labels)
+
+
+def test_remove_batch_keeps_site_and_time():
+    t, clean, labels = _batch_fixture()
+    out = t.remove_batch(labels)
+    # batch shift gone: corrected tensor differs from the clean one by a
+    # per-gene constant at most noise level, not by the 5.0 shift
+    diff = out.values - clean
+    assert np.abs(diff).max() < 3.0
+    late = [(0, 0), (2, 1), (4, 0), (6, 1)]
+    assert np.mean([diff[:, j, k].mean() for j, k in late]) < 2.0
+    # site difference preserved
+    y = (t.colonies.site == "y").to_numpy()
+    assert out.values[:, y].mean() - out.values[:, ~y].mean() == pytest.approx(
+        clean[:, y].mean() - clean[:, ~y].mean(), abs=1.0)
+    assert out.params["batch_removed"] == {"a": ["late"], "b": ["late"]}
+
+
+def test_remove_batch_refuses_confounded_design():
+    t, _, labels = _batch_fixture()
+    labels[:] = "undated"
+    for j in (2, 3):  # batch == site y in species a
+        labels[f"C-{j}-TP1"] = labels[f"C-{j}-TP2"] = "late"
+    with pytest.raises(ValueError, match="confounded"):
+        t.remove_batch(labels)
+
+
+def test_extraction_batch_from_sample_names():
+    from stdm.mosaic import extraction_batch
+    assert extraction_batch("20230123_ACR-225_TP1") == ("2023-01-23", "2023-01")
+    assert extraction_batch("291-20220211") == ("2022-02-11", "2021-22")
+    assert extraction_batch("527") == (None, "undated")

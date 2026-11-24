@@ -102,10 +102,52 @@ Done (2026-11-23). Notes for phase 3:
 - Choose rank by held-out reconstruction error across random splits.
 - Choose sparsity by split-half agreement of component membership.
 
+Done (2026-11-23); details in the README's Sparse CP section. Notes for
+phase 4:
+- The talk's rank-35 model reproduces exactly but its components are not
+  stable: masked and converged, mean similarity to it is 0.32.
+- Held-out-sample CV cannot choose a rank (sample-level noise dominates), so
+  rank was chosen by split-half stability on the species-centred tensor.
+- Use the rank-3 model on the top 2,000 variable genes,
+  species-centred, with no penalties
+  (`results/centered-top2000-r3`). Component 1 is a site difference shared
+  by all species. Component 2 is an *A. pulchra* seasonal pattern. Component
+  3 is driven by outlier samples.
+- Check before interpreting component 1: whether site is confounded with
+  sequencing batch or extraction date.
+- Gene sparsity is not useful at this rank: l1 removes whole components.
+
 ### 4. Interpretation
 - Component gene lists and GO annotation.
 - Overlap with the calcification gene set.
 - Component scores against physiology and temperature.
+
+In progress (2026-11-23):
+- Batch check done (README, Extraction batch). Component 1 is a real site
+  difference in *P. evermanni* and *P. tuahiniensis*. In *A. pulchra*, site
+  and component 2's timepoint pattern are confounded with RNA extraction
+  batch.
+- GO slim enrichment done for components 1 and 2.
+- Batch handling done. The RNA metadata is in the manifest
+  (`multi_rna_metadata`), `data/samples.csv` has plate, RNA concentration
+  and inferred extraction batch, and `--remove-batch` corrects the tensor.
+  After correction rank 2 is used (rank 3 is degenerate):
+  `results/centered-top2000-r2-nobatch`. The site component holds in
+  *P. evermanni* and *P. tuahiniensis* and is absent in *A. pulchra*. The
+  *A. pulchra* timepoint component is provisional.
+- Physiology, ITS2 and calcification-gene tests done (`stdm interpret`,
+  `results/phase4`). No association holds within site x timepoint. The
+  *A. pulchra* timepoint component shares calcification's TP1/TP4 vs
+  TP2/TP3 split, and calcification genes are not enriched in either
+  component.
+
+Done (2026-11-23) apart from two questions for the lab: whether the dated
+RNA sample names mark extraction batches, and whether the near-zero TP1 and
+TP4 calcification values are real. Notes for phase 5:
+- The site component (*P. evermanni*, *P. tuahiniensis*) is the most solid
+  response to predict.
+- Colony-level variation beyond site and season is mostly sample-specific,
+  so expect modest prediction accuracy.
 
 ### 5. Elastic net
 - Predict component genes from miRNA, lncRNA and gene-body methylation,
@@ -122,7 +164,9 @@ Done (2026-11-23). Notes for phase 3:
 
 ## Open questions
 
-- Rank, sparsity level and component results presented in the talk (needed
-  as a reference point for phase 3).
-- Whether the talk's analysis code lives in `urol-e5/timeseries_molecular`
-  and should be ported here or only referenced.
+- Resolved: the talk used rank 35 with lambdas 0.2/0.1/0.05, from
+  `urol-e5/timeseries_molecular` (`M-multi-species/scripts/14.1-barnacle`).
+  Its tensor build is ported in `stdm.reproduce`; Barnacle is vendored.
+- Resolved in part: site is not confounded with batch in *P. evermanni* or
+  *P. tuahiniensis*, but is in *A. pulchra*. Whether the dated sample names
+  really mark extraction batches should be confirmed with the lab.

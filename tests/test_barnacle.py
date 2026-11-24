@@ -128,6 +128,8 @@ def test_stability_rank_rule():
     df = pd.DataFrame({"rank": [1, 1, 2, 2, 3, 3, 4, 4],
                        "n_reproducible": [1, 1, 2, 2, 2, 1, 2, 2]})
     assert stability_rank(df) == 2
+    noise = pd.DataFrame({"rank": [1, 1, 8, 8], "n_reproducible": [0, 0, 1, 0]})
+    assert stability_rank(noise) is None
 
 
 @pytest.mark.slow
