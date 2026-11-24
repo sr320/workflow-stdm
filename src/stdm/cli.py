@@ -428,6 +428,26 @@ def main():
     int_parser.add_argument("--top", type=int, default=200,
                             help="Loadings per side compared with the calcification gene set")
 
+    en_parser = subparsers.add_parser(
+        "elastic-net", help="Predict component scores from miRNA, lncRNA and methylation (colony-held-out CV)")
+    en_parser.add_argument("--scores", default="results/phase4/sample_scores.csv",
+                           help="Per-sample component scores (from stdm interpret)")
+    en_parser.add_argument("--component", required=True)
+    en_parser.add_argument("--species", nargs="+", default=["peve", "ptua"])
+    en_parser.add_argument("--block-sets", nargs="+", default=["mirna", "lncrna", "gene_meth",
+                                                               "lncrna+gene_meth"],
+                           help="Predictor sets; join blocks with '+'")
+    en_parser.add_argument("--targets", nargs="+", default=["raw", "within_site"],
+                           choices=["raw", "within_site"])
+    en_parser.add_argument("--top", type=int, default=1000, help="Most variable features per block")
+    en_parser.add_argument("--adjust", default="none", choices=["none", "technical", "gene-pcs"],
+                           help="Remove technical covariates or gene-expression PCs from the predictors")
+    en_parser.add_argument("--n-pcs", type=int, default=3, help="Gene-expression PCs for --adjust gene-pcs")
+    en_parser.add_argument("--permutations", type=int, default=50)
+    en_parser.add_argument("--workers", type=int, help="Parallel permutations (default: cores - 1)")
+    en_parser.add_argument("--seed", type=int, default=0)
+    en_parser.add_argument("--output", "-o", required=True)
+
     args = parser.parse_args()
 
     if args.command == "reproduce-talk":
@@ -442,6 +462,8 @@ def main():
         run_sparse_cp(args)
     elif args.command == "interpret":
         run_interpret(args)
+    elif args.command == "elastic-net":
+        run_elastic_net(args)
     elif args.command == "build-tensor":
         run_build_tensor(args)
     elif args.command == "fetch":
@@ -988,3 +1010,54 @@ def run_interpret(args):
             print(hits.round(4).to_string(index=False))
     print("\ncalcification_overlap:")
     print(tables["calcification_overlap"].round(4).to_string(index=False))
+
+
+
+def run_elastic_net(args):
+    """Colony-held-out elastic net for each species, predictor set and target."""
+    import warnings
+    import pandas as pd
+    from . import elasticnet as en
+    from .selection import default_workers
+
+    warnings.filterwarnings("ignore", category=UserWarning, module="stdm.elasticnet")
+    scores = pd.read_csv(args.scores).set_index("sample_id")
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for sp in args.species:
+        sc = scores[scores.species == sp]
+        for bset in args.block_sets:
+            X = en.predictors(sp, bset.split("+"), top=args.top)
+            X = X.loc[X.index.intersection(sc.index)]
+            X = en.adjust(X, sp, args.adjust, args.n_pcs)
+            meta = sc.loc[X.index, ["colony_id", "site", "timepoint"]]
+            y = sc.loc[X.index, args.component]
+            for target in args.targets:
+                spec = en.ENetSpec(target=target, seed=args.seed)
+                pred, sel, folds = en.cross_validate(X, y, meta, spec)
+                s = en.summarise(pred)
+                null = en.permutation_null(X, y, meta, spec, n=args.permutations,
+                                           workers=args.workers or default_workers(),
+                                           seed=args.seed + 1) if args.permutations else np.array([])
+                stable = en.stable_features(sel)
+                tag = f"{sp}_{bset.replace('+', '-')}_{target}"
+                pred.to_csv(out / f"{tag}_predictions.csv")
+                sel.to_csv(out / f"{tag}_selection.csv", index=False)
+                folds.to_csv(out / f"{tag}_folds.csv", index=False)
+                row = dict(species=sp, predictors=bset, target=target, n_features=X.shape[1], **s,
+                           null_r2_median=float(np.median(null)) if len(null) else np.nan,
+                           null_r2_95=float(np.quantile(null, 0.95)) if len(null) else np.nan,
+                           p_perm=float((1 + (null >= s["r2"]).sum()) / (1 + len(null)))
+                           if len(null) else np.nan,
+                           n_stable=len(stable), noise_threshold=float(stable.threshold.iloc[0])
+                           if len(stable) else np.nan,
+                           top_stable="; ".join(f"{f} ({q:.2f})" for f, q in
+                                                zip(stable.feature[:5], stable.frequency[:5])))
+                rows.append(row)
+                print({k: (round(v, 3) if isinstance(v, float) else v) for k, v in row.items()},
+                      flush=True)
+    summary = pd.DataFrame(rows)
+    summary.to_csv(out / "summary.csv", index=False)
+    _write_json(out / "run.json", {"args": vars(args)})
+    print(f"Saved {out}")
