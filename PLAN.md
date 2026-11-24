@@ -128,10 +128,15 @@ In progress (2026-11-23):
   and component 2's timepoint pattern are confounded with RNA extraction
   batch.
 - GO slim enrichment done for components 1 and 2.
-- Next: add the upstream RNA metadata to the manifest and carry extraction
-  batch into the model (e.g. regress it out of *A. pulchra* before
-  decomposing, or drop the re-extracted samples). Then overlap with the
-  calcification genes and test against physiology.
+- Batch handling done. The RNA metadata is in the manifest
+  (`multi_rna_metadata`), `data/samples.csv` has plate, RNA concentration
+  and inferred extraction batch, and `--remove-batch` corrects the tensor.
+  After correction rank 2 is used (rank 3 is degenerate):
+  `results/centered-top2000-r2-nobatch`. The site component holds in
+  *P. evermanni* and *P. tuahiniensis* and is absent in *A. pulchra*. The
+  *A. pulchra* timepoint component is provisional.
+- Next: test component scores against physiology and ITS2, and overlap
+  with the calcification genes.
 
 ### 5. Elastic net
 - Predict component genes from miRNA, lncRNA and gene-body methylation,

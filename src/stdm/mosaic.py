@@ -360,6 +360,46 @@ def load_orthologs(data_dir: Optional[Path] = None,
 AVAILABILITY_TYPES = ["gene", "mirna", "lncrna", "gene_meth", "exon_cv", "metabolomics", "lipidomics"]
 
 
+def extraction_batch(sample_name: str) -> tuple[Optional[str], str]:
+    """Infer ``(extraction_date, batch)`` from an RNA submission sample name.
+
+    Some sample names carry an extraction date (``20230123_ACR-225_TP1``,
+    ``291-20220211``); the rest are plain numbers. Batches are inferred, not
+    documented upstream: dates from 2023 on are named by year and month, the
+    scattered 2021-2022 dates are pooled as ``2021-22``, and undated names
+    form ``undated``.
+    """
+    m = re.search(r"(20\d{2})(\d{2})(\d{2})", str(sample_name))
+    if not m:
+        return None, "undated"
+    year, month, day = m.groups()
+    date = f"{year}-{month}-{day}"
+    return date, (f"{year}-{month}" if int(year) >= 2023 else "2021-22")
+
+
+def load_rna_metadata(data_dir: Optional[Path] = None,
+                      manifest: Optional[dict[str, Entry]] = None) -> pd.DataFrame:
+    """RNA submission metadata, one row per canonical sample ID.
+
+    Columns: ``rna_sample_name``, ``plate``, ``rna_conc_ng_ul``,
+    ``extraction_date`` and ``extraction_batch`` (see :func:`extraction_batch`).
+    """
+    raw = load_table("multi_rna_metadata", data_dir, manifest)
+    ids = (raw["ColonyID"].str.strip() + "-" + raw["Timepoint"].str.strip()).map(canonical_sample_id)
+    dates, batches = zip(*raw["SampleName"].map(extraction_batch))
+    out = pd.DataFrame({
+        "sample_id": ids,
+        "rna_sample_name": raw["SampleName"].astype(str),
+        "plate": raw["Plate"],
+        "rna_conc_ng_ul": pd.to_numeric(raw["Conc-ng.uL"], errors="coerce"),
+        "extraction_date": dates,
+        "extraction_batch": batches,
+    })
+    if out["sample_id"].isna().any() or out["sample_id"].duplicated().any():
+        raise ValueError("RNA metadata has unparseable or duplicated colony/timepoint labels")
+    return out.set_index("sample_id")
+
+
 def build_sample_metadata(data_dir: Optional[Path] = None,
                           manifest: Optional[dict[str, Entry]] = None) -> pd.DataFrame:
     """One row per colony x timepoint sampled for any molecular data type.
@@ -404,4 +444,10 @@ def build_sample_metadata(data_dir: Optional[Path] = None,
 
     for dt, cols in present.items():
         meta[f"has_{dt}"] = meta["sample_id"].isin(cols)
+
+    rna_entry = manifest.get("multi_rna_metadata")
+    if rna_entry and raw_path(rna_entry, data_dir).exists():
+        rna = load_rna_metadata(data_dir, manifest)
+        meta = meta.join(rna[["plate", "rna_conc_ng_ul", "extraction_date", "extraction_batch"]],
+                         on="sample_id")
     return meta

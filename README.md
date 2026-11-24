@@ -252,6 +252,32 @@ Batch here assumes dated sample names mark extraction batches and undated
 (numbered) names are one earlier batch; this is inferred from the names,
 not documented.
 
+**Batch-corrected model.** `--remove-batch` subtracts per-gene extraction
+batch effects within each species, keeping site and timepoint effects in
+the regression so that they are not removed with batch (as in limma's
+`removeBatchEffect` with a design). Batch labels come from
+`data/samples.csv` (`extraction_batch`). After correction, rank 3 becomes
+degenerate (two components with congruence −0.57, each explaining negative
+variance alone), so rank 2 is used:
+
+```bash
+uv run stdm sparse-cp --tensor talk-centered --remove-batch --top-variable 2000 \
+    --nonneg-modes --rank 2 --lambdas 0 0 0 --n-init 20 --output results/centered-top2000-r2-nobatch
+```
+
+| Component | Matches uncorrected | Variance | Pattern | Site p (apul, peve, ptua) | Half-refit similarity |
+|---|---|---|---|---|---|
+| Site | component 1 (gene 0.99, time 0.99) | 9% | Manava > Mahana in *P. evermanni* and *P. tuahiniensis*; none in *A. pulchra* | 0.13, 2e-5, 9e-4 | 0.78 |
+| *A. pulchra* time | component 2 (time 0.97, gene 0.65) | 6% | *A. pulchra* colonies at both sites alike; Mar and Sep up, Jan and Nov down | timepoint p = 2e-6 in *A. pulchra* | 0.51 (min 0.01) |
+
+- The site component is a real difference between sites in two species.
+  The *A. pulchra* site difference was extraction batch.
+- An *A. pulchra* timepoint pattern survives correction, but it is less
+  reproducible and its gene content changed (cosine 0.65 to the uncorrected
+  component). Because the 2023 extraction holds only TP1 and TP4 samples,
+  batch and timepoint are hard to separate in *A. pulchra*; treat this
+  component as provisional.
+
 **GO slim enrichment** (`goslim_enrichment.csv`; top 200 loadings of the 737
 annotated groups against the rest, Fisher test, BH q):
 

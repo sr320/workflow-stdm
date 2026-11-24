@@ -31,3 +31,4 @@ multi_metabolomics,multi,metabolomics,matrix,comma,,,no,Metabolomics (141 compou
 multi_lipidomics,multi,lipidomics,matrix,comma,,,no,Lipidomics (371 lipids x 96 samples),https://raw.githubusercontent.com/urol-e5/timeseries_molecular/main/M-multi-species/output/lipid_count_matrix.csv
 multi_physiology,multi,physiology,table,comma,,,no,Physiology per colony and timepoint (master_timeseries),https://raw.githubusercontent.com/urol-e5/timeseries/master/time_series_analysis/Output/master_timeseries.csv
 multi_its2,multi,its2,table,comma,sample_id,,no,ITS2 symbiont type relative abundance,https://raw.githubusercontent.com/urol-e5/timeseries/master/time_series_analysis/Output/ITS2_rel_abund_matrix.csv
+multi_rna_metadata,multi,rna_metadata,table,comma,,,no,"RNA extraction and sequencing submission metadata (plate, concentration; extraction dates in some sample names)",https://raw.githubusercontent.com/urol-e5/timeseries_molecular/main/M-multi-species/data/rna_metadata.csv
