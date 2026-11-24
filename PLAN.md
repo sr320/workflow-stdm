@@ -157,6 +157,30 @@ TP4 calcification values are real. Notes for phase 5:
   species, random 80/20 splits put the same colony in train and test and
   inflate accuracy.
 
+First run done (2026-11-23) on the site component (README, Elastic net):
+`stdm elastic-net`, colony-pair outer CV, within-site permutation null,
+noise-injection stability selection; `results/phase5-site`.
+- lncRNA predicts the site component with held-out R² 0.93 (0.62–0.75 within
+  site), but the component is lncRNA's own leading axis (PC1 r = −0.91 in
+  *P. evermanni*). lncRNA shares libraries with the gene counts, so this
+  mostly reflects shared biology and technical variation.
+- Gene-body methylation, the only independent assay, predicts nothing.
+- miRNA: weak within-site signal in *P. evermanni* only (p = 0.04,
+  uncorrected).
+
+- Shared-variation check (`--adjust`): removing technical covariates
+  (library sizes, RNA concentration, plate, extraction batch) leaves the
+  within-site prediction significant (R² 0.32 *P. evermanni*, 0.75
+  *P. tuahiniensis*). Removing the leading gene-expression PCs removes all
+  predictive signal, and unadjusted lncRNA predicts other gene PCs equally
+  well. lncRNA tracks the transcriptome's main axes; cause cannot be
+  separated with these data.
+
+Possible next steps:
+- Predict individual component genes rather than the score, as in the talk.
+- Run the *A. pulchra* timepoint component (Component_1), keeping in mind it
+  is provisional.
+
 ### 6. Extensions (from the talk's conclusions)
 - Genes not shared by all three species.
 - lncRNA in the tensor.

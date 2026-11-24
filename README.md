@@ -17,7 +17,8 @@ The roadmap is in [PLAN.md](PLAN.md).
 | 2. Tensor on real data (`stdm build-tensor`, `stdm.tensor`) | done |
 | 3. Barnacle sparse CP with rank and sparsity selection | done; see [Sparse CP](#sparse-cp) |
 | 4. Interpretation (`stdm interpret`) | done; see [Physiology, symbionts and calcification genes](#physiology-symbionts-and-calcification-genes) |
-| 5-6. Elastic net, extensions | not started |
+| 5. Elastic net (`stdm elastic-net`, `stdm.elasticnet`) | first run done; see [Elastic net](#elastic-net) |
+| 6. Extensions | not started |
 
 The `generate` / `decompose` / `run` / `info` commands and
 `SparseTensorDecomposer` are the original synthetic-data scaffold: plain
@@ -325,6 +326,123 @@ annotated groups against the rest, Fisher test, BH q):
   typical of RNA-quality differences, consistent with the batch
   confounding.
 
+## Elastic net
+
+```bash
+uv run stdm elastic-net --component Component_2 --permutations 50 --workers 7 \
+    --output results/phase5-site
+```
+
+Predicts each sample's score on a CP component (from `stdm interpret`'s
+`sample_scores.csv`) from regulatory layers, per species. Component_2 of
+`results/centered-top2000-r2-nobatch` is the site component.
+
+- **Predictors:**
+  - miRNA and lncRNA counts: median-of-ratios normalisation (DESeq2
+    `poscounts` when no feature is positive in every sample), expression
+    filter, log2(x + 1).
+  - Gene-body methylation: genes with at most 20% missing values; gaps are
+    filled with training-fold means.
+  - The 1,000 most variable features per block (no target information used).
+  - Libraries under 10% of the median size are dropped with a warning. This
+    removes 9 *P. evermanni* and 7 *P. tuahiniensis* miRNA samples, so miRNA
+    is fitted on its own rather than joined to the other blocks.
+- **Validation:** each outer fold holds out one colony from each site (all
+  25 pairs), so no colony is in training and test at once. An inner grouped
+  `ElasticNetCV` chooses the penalty and l1 ratio.
+- **Targets:** `raw` (the score, compared with a baseline that predicts each
+  site's training mean) and `within_site` (the score minus its training site
+  mean: what the predictors explain beyond the site difference).
+- **Null:** 50 refits with colony labels shuffled within site. With 50
+  permutations the smallest possible p is 0.02.
+- **Stable features:** selected in more outer folds than the 95th percentile
+  of injected noise features (column-permuted copies of real features).
+
+Outputs per run: `{species}_{predictors}_{target}_predictions.csv`,
+`_selection.csv`, `_folds.csv`, plus `summary.csv` and `run.json`.
+
+**Site component, held-out R²** (Spearman in brackets; * p_perm = 0.02, the
+minimum):
+
+| Predictors | *P. evermanni* raw | within site | *P. tuahiniensis* raw | within site |
+|---|---|---|---|---|
+| Site-mean baseline | 0.37–0.43 | 0 | 0.07–0.18 | 0 |
+| miRNA | −0.02 (0.12) | 0.17 (0.43), p = 0.04 | −0.36 | −0.16 |
+| lncRNA | 0.93 (0.96)* | 0.62 (0.80)* | 0.93 (0.95)* | 0.75 (0.86)* |
+| Gene-body methylation | −0.10 | −0.11 | −0.07 | −1.19 |
+| lncRNA + methylation | 0.91 (0.95)* | 0.49 (0.74)* | 0.96 (0.97)* | 0.65 (0.79)* |
+
+- **lncRNA predicts the site component almost perfectly,** including the
+  variation among colonies and timepoints within a site. Adding methylation
+  does not help.
+- **But this is mostly shared structure, not regulation.** The site component
+  is the leading axis of lncRNA variation itself: lncRNA PC1 correlates −0.91
+  with the score in *P. evermanni* (−0.82 within site) and −0.68 in
+  *P. tuahiniensis*, where PC2 adds −0.60. lncRNA and gene counts come from the
+  same RNA-seq libraries, so they share biology and also library-level
+  technical variation. Correspondingly, 40–130 lncRNAs per model pass the
+  stability threshold, many at frequency 1.0: a broad axis, not a few
+  regulators.
+- **Gene-body methylation predicts nothing** in either species or target
+  (p ≥ 0.16). It is the only layer measured on a separate assay, so this is
+  the cleanest test of an epigenetic link, and it is negative at this sample
+  size.
+- **miRNA:** a weak within-site signal in *P. evermanni* (R² 0.17, p = 0.04,
+  one of 16 tests, not corrected); nothing in *P. tuahiniensis*.
+
+**Is lncRNA's signal anything beyond what it shares with gene expression?**
+`--adjust` regresses every predictor on covariates before fitting (no
+target information, so it is done once on all samples):
+
+```bash
+uv run stdm elastic-net --component Component_2 --block-sets lncrna --adjust technical \
+    --permutations 50 --workers 7 --output results/phase5-site-technical
+uv run stdm elastic-net --component Component_2 --block-sets lncrna --adjust gene-pcs --n-pcs 3 ...
+```
+
+- `technical`: log library size of genes and lncRNA, log RNA concentration,
+  plate and extraction batch.
+- `gene-pcs`: the top K principal components of the species' gene
+  expression (2,000 most variable genes, log normalised counts).
+
+| lncRNA predictors | *P. evermanni* raw | within site | *P. tuahiniensis* raw | within site |
+|---|---|---|---|---|
+| Unadjusted | 0.93* | 0.62* | 0.93* | 0.75* |
+| Technical covariates removed | 0.10 (p = 0.14) | 0.32* | 0.67* | 0.75* |
+| Gene PCs 1–3 removed | −6.8 | −1.8 | −0.74 | −0.51 |
+| Gene PCs 1–10 removed | −0.02 | 0.23 | −0.05 | 0.00 |
+
+(* p_perm = 0.02. Gene-PC rows are single CV runs without permutations;
+`results/phase5-site/lncrna_adjustment.csv`.)
+
+- **Measured technical variation does not explain the within-site
+  prediction.** It stays at R² 0.32 (*P. evermanni*) and 0.75
+  (*P. tuahiniensis*). The *P. evermanni* raw R² falls because technical
+  covariates, mainly extraction batch, partly line up with site in that
+  species (they explain 19% of the score), so removing them also removes
+  part of the site difference.
+- **Removing gene-expression axes removes all of it.** The site component
+  is gene PC1 in *P. evermanni* (r = −0.76) and gene PC2 in
+  *P. tuahiniensis* (r = 0.93). Once those axes are taken out of lncRNA,
+  nothing predicts the score; the large negative R² values are the model
+  fitting leftover noise. This is close to circular, since the score is
+  itself built from gene expression, but it shows there is no lncRNA
+  signal for the component outside the shared axes.
+- **lncRNA mirrors the transcriptome generally, not the site component in
+  particular.** As a control, unadjusted lncRNA also predicts the other
+  leading gene PCs: held-out R² 0.80, 0.51 and 0.31 for gene PCs 1, 2 and 5
+  in *P. evermanni*, and 0.86, 0.81 and 0.70 for PCs 1, 2 and 5 in
+  *P. tuahiniensis*.
+- **Conclusion:** lncRNA and gene expression vary together along the same
+  few axes, beyond what library size, RNA concentration, plate and batch
+  explain. These data cannot tell whether that is lncRNA regulating genes,
+  genes and lncRNAs responding to the same conditions, or unmeasured
+  library effects. A predictor from an independent assay is needed to
+  separate them, and the one available (gene-body methylation) predicts
+  nothing.
+- One *P. evermanni* sample, POR-73-TP2, has RNA concentration recorded as
+  0.0 ng/µL in the RNA metadata; worth checking with the lab.
+
 ## Tests
 
 ```bash
@@ -347,6 +465,7 @@ src/stdm/barnacle/      vendored Barnacle sparse CP (masked fitting), factor mat
 src/stdm/selection.py   rank and sparsity selection
 src/stdm/reproduce.py   the talk's rank-35 model and published factors
 src/stdm/interpret.py   component scores vs physiology, ITS2 and gene sets
+src/stdm/elasticnet.py  colony-held-out elastic net, permutation null, stability selection
 src/stdm/cli.py         `stdm` command
 results/                run outputs (ignored)
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold
