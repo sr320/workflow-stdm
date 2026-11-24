@@ -223,8 +223,45 @@ Similarity to refits on each of 10 colony halves is in brackets.
 | 2, *A. pulchra* season (0.96) | 10% | *A. pulchra* only (Mahana 62, Manava 31; others near 0) | + Jan, Nov; − Mar, Sep | + eIF5B, DnaJC8, PHF14; − KLF5, malectin |
 | 3, outliers (0.51) | 5% | dominated by POC-52 and ACR-186 | TP1 only | not interpreted |
 
-Site could be confounded with sequencing batch; this has not been checked.
-Gene annotations are not yet tested for enrichment.
+**Extraction batch.** The upstream RNA metadata
+(`M-multi-species/data/rna_metadata.csv` in `urol-e5/timeseries_molecular`)
+gives a sequencing plate, RNA concentration and, for some samples, an
+extraction date in the sample name. All samples went in one sequencing
+order and plate is not related to site. Per-sample component scores
+(projection onto the gene loadings), regressed on site with and without
+extraction batch, log RNA concentration and timepoint:
+
+| | Site effect, component 1 | Adjusted | Undated samples only |
+|---|---|---|---|
+| *P. evermanni* | −28 (p = 3e-6) | −29 (p = 9e-6) | Mahana +15, Manava −20 (p = 4e-4, n = 26) |
+| *P. tuahiniensis* | −18 (p = 3e-4) | −19 (p = 4e-4) | Mahana +9, Manava −10 (p = 0.008, n = 32) |
+| *A. pulchra* | −12 (p = 1e-4) | −3 (p = 0.34) | Mahana +1, Manava −5 (p = 0.21, n = 21) |
+
+- In *P. evermanni* and *P. tuahiniensis* the site component holds after
+  adjustment and within one batch.
+- In *A. pulchra*, site and extraction batch are confounded: the 10 samples
+  extracted in January 2023 are all Mahana, and 8 of 9 extracted in August
+  2024 are Manava. The site effect disappears after adjustment, and RNA
+  concentration is associated with the score within site (p = 0.007).
+- Component 2 is also partly batch: the 2023 and 2024 extractions are mostly
+  TP1 and TP4, which is where the component is positive. A timepoint effect
+  remains after adjustment (p = 8e-5), mainly a TP2 dip, but it is about
+  half the unadjusted size.
+
+Batch here assumes dated sample names mark extraction batches and undated
+(numbered) names are one earlier batch; this is inferred from the names,
+not documented.
+
+**GO slim enrichment** (`goslim_enrichment.csv`; top 200 loadings of the 737
+annotated groups against the rest, Fisher test, BH q):
+
+- Component 1, Mahana side: DNA binding (q = 0.02), DNA repair (q = 0.03).
+- Component 1, Manava side: nothing at q < 0.1. The top terms are
+  development, mitochondrion, plasma membrane and cell motility.
+- Component 2, positive side: nucleolus, RNA binding, nucleoplasm and mRNA
+  metabolic process (q < 0.001). This ribosome-biogenesis signature is also
+  typical of RNA-quality differences, consistent with the batch
+  confounding.
 
 ## Tests
 

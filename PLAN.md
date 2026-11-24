@@ -122,6 +122,17 @@ phase 4:
 - Overlap with the calcification gene set.
 - Component scores against physiology and temperature.
 
+In progress (2026-11-23):
+- Batch check done (README, Extraction batch). Component 1 is a real site
+  difference in *P. evermanni* and *P. tuahiniensis*. In *A. pulchra*, site
+  and component 2's timepoint pattern are confounded with RNA extraction
+  batch.
+- GO slim enrichment done for components 1 and 2.
+- Next: add the upstream RNA metadata to the manifest and carry extraction
+  batch into the model (e.g. regress it out of *A. pulchra* before
+  decomposing, or drop the re-extracted samples). Then overlap with the
+  calcification genes and test against physiology.
+
 ### 5. Elastic net
 - Predict component genes from miRNA, lncRNA and gene-body methylation,
   per species.
@@ -140,4 +151,6 @@ phase 4:
 - Resolved: the talk used rank 35 with lambdas 0.2/0.1/0.05, from
   `urol-e5/timeseries_molecular` (`M-multi-species/scripts/14.1-barnacle`).
   Its tensor build is ported in `stdm.reproduce`; Barnacle is vendored.
-- Whether site is confounded with sequencing batch (phase 4).
+- Resolved in part: site is not confounded with batch in *P. evermanni* or
+  *P. tuahiniensis*, but is in *A. pulchra*. Whether the dated sample names
+  really mark extraction batches should be confirmed with the lab.
