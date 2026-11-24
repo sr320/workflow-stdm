@@ -507,6 +507,81 @@ methylation.
 Outputs: `{species}_genes.csv` (r, p, q per level plus methylation mean and
 SD), `{species}_null.csv`, `summary.csv`, `component_sets.csv`.
 
+### Genotype check at the CpG level
+
+```bash
+uv run stdm fetch --key apul_cpg peve_cpg ptua_cpg apul_gff peve_gff ptua_gff --include-large
+uv run stdm cpg-check --output results/phase5-cpg
+```
+
+`cpg-check` (`stdm.cpg`) asks whether the between-colony coupling could come
+from sequence differences between colonies.
+
+- **Inputs:**
+  - **Genes:** every gene at q < 0.1 in `results/phase5-cis`, plus three
+    control genes per hit. Controls are non-significant genes (q ≥ 0.5)
+    matched on mean and SD of gene methylation.
+  - **CpG data:** the merged CpG-level methylation files (`*_cpg`, about 1 GB
+    each). CpGs are assigned to genes with the upstream gene models
+    (`*_gff`, added to the manifest). CpGs must be present in at least 80% of
+    samples.
+- **Variant-like CpGs:** a C/T mutation that destroys a CpG makes bisulfite
+  sequencing read it as unmethylated. A CpG is flagged when one colony is at
+  or below 5% at every timepoint while at least two other colonies average
+  at least 40%. This catches homozygous CpG loss only; a heterozygous loss
+  halves the level and is not flagged.
+- **Per gene:**
+  - The methylation–expression correlation is recomputed from the gene's
+    mean CpG methylation (`r_cpg`). It is then recomputed without the
+    variant-like CpGs, and without the single CpG whose removal weakens it
+    most.
+  - The fraction of the gene's CpGs whose own correlation has the gene's
+    sign is recorded.
+
+| | *A. pulchra* | *P. evermanni* | *P. tuahiniensis* |
+|---|---|---|---|
+| Hits / controls with CpG data | 149 / 439 | 60 / 122 | 35 / 104 |
+| Hits reproduced from CpG data (\|r\| ≥ 0.5, same sign) | 68 | 16 | 26 |
+| ...still \|r\| ≥ 0.5 without variant-like CpGs | 47 | 13 | 20 |
+| ...still \|r\| ≥ 0.5 without the most influential CpG | 57 | 14 | 22 |
+| Variant-like CpGs, hits vs controls | 18.5% vs 9.3% | 9.9% vs 7.8% | 4.8% vs 4.6% |
+| Genes with ≥ 1 variant-like CpG, hits vs controls | 62% vs 52% (p = 0.04) | 33% vs 21% (p = 0.10) | 66% vs 61% (p = 0.69) |
+| CpGs agreeing in sign with the gene, hits vs controls (median) | 0.74 vs 0.62 (p < 0.001) | 0.85 vs 0.80 (p = 0.23) | 0.68 vs 0.62 (p = 0.03) |
+
+- **The CpG file only partly reproduces the gene-level results.** Its
+  filter (CpGs with data in at least 20 samples) differs from the per-sample
+  10x bedgraphs behind the gene-methylation table. Rebuilt from CpGs, the
+  hits' correlations agree with the gene-level ones (r = 0.67–0.83), but only
+  15–43% of hits reach the q < 0.1 cut-off again. Part of that is regression
+  to the mean: hits were chosen for extreme correlations. The robustness
+  counts are taken on the hits that reproduce.
+- **In most coupled genes the signal is spread across the gene.**
+  - It survives removing variant-like CpGs in 47 of 68 *A. pulchra*, 13 of
+    16 *P. evermanni* and 20 of 26 *P. tuahiniensis* genes.
+  - It survives removing the most influential single CpG in 57 of 68, 14 of
+    16 and 22 of 26 genes.
+  - More of a hit gene's CpGs agree in direction than in matched controls.
+  - So most coupled genes show a gene-wide shift rather than one site
+    switched off.
+- **In *A. pulchra*, genotype contributes.** Variant-like CpGs are twice as
+  common in hit genes as in matched controls, and about 30% of reproduced
+  hits fall below |r| = 0.5 without them. There is no clear enrichment in
+  the other two species.
+- **What this rules out, and what it doesn't.** It rules out homozygous
+  CpG-destroying mutations as the main explanation. It cannot rule out
+  heterozygous variants, or genetic variants elsewhere that shift
+  methylation across a whole gene. Those need genotype calls from the WGBS
+  reads (for example Biscuit or BS-SNPer), which these processed files
+  don't contain. The within-colony test, where genotype is fixed, remains
+  the genotype-free comparison, and it found coupling only in a few
+  *A. pulchra* genes.
+- **Data note:** ACR-225-TP1 is in the gene-methylation table but not in the
+  CpG file, so *A. pulchra* uses 39 samples here.
+
+Outputs: `{species}_genes.csv` (per gene: group, CpG counts, `r_cpg`,
+`r_drop_variant`, `r_drop_top`, `frac_same_sign`, `r_gene_meth`) and
+`summary.csv`.
+
 ## Tests
 
 ```bash
@@ -531,6 +606,7 @@ src/stdm/reproduce.py   the talk's rank-35 model and published factors
 src/stdm/interpret.py   component scores vs physiology, ITS2 and gene sets
 src/stdm/elasticnet.py  colony-held-out elastic net, permutation null, stability selection
 src/stdm/cis.py         gene-level methylation vs expression with a colony permutation null
+src/stdm/cpg.py         CpG-level genotype check of coupled genes
 src/stdm/cli.py         `stdm` command
 results/                run outputs (ignored)
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold

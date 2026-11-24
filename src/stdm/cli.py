@@ -460,10 +460,22 @@ def main():
     cis_parser.add_argument("--seed", type=int, default=0)
     cis_parser.add_argument("--output", "-o", required=True)
 
+    cpg_parser = subparsers.add_parser(
+        "cpg-check", help="CpG-level genotype check of significant cis-meth genes")
+    cpg_parser.add_argument("--cis", default="results/phase5-cis", help="stdm cis-meth output")
+    cpg_parser.add_argument("--species", nargs="+", default=["apul", "peve", "ptua"])
+    cpg_parser.add_argument("--q", type=float, default=0.1, help="q cut-off for significant genes")
+    cpg_parser.add_argument("--controls-per-hit", type=int, default=3)
+    cpg_parser.add_argument("--seed", type=int, default=0)
+    cpg_parser.add_argument("--output", "-o", required=True)
+
     args = parser.parse_args()
 
     if args.command == "cis-meth":
         run_cis_meth(args)
+        return
+    if args.command == "cpg-check":
+        run_cpg_check(args)
         return
     if args.command == "reproduce-talk":
         run_reproduce_talk(args)
@@ -1109,5 +1121,61 @@ def run_cis_meth(args):
     pd.DataFrame(summary).to_csv(out / "summary.csv", index=False)
     if sets_out:
         pd.concat(sets_out).to_csv(out / "component_sets.csv", index=False)
+    _write_json(out / "run.json", {"args": vars(args)})
+    print(f"Saved {out}")
+
+
+def run_cpg_check(args):
+    """CpG-level checks for genes whose methylation tracks expression between colonies."""
+    import warnings
+    import pandas as pd
+    from scipy import stats
+    from . import cis, cpg
+
+    warnings.filterwarnings("ignore", category=UserWarning, module="stdm.elasticnet")
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    level = "between_colony"
+    summary = []
+    for sp in args.species:
+        cg = pd.read_csv(Path(args.cis) / f"{sp}_genes.csv", index_col=0)
+        hits = list(cg.index[cg[f"q_{level}"] < args.q])
+        if not hits:
+            continue
+        controls = cpg.matched_controls(cg, hits, level, args.controls_per_hit, seed=args.seed)
+        E, _, meta = cis.load_pair(sp)
+        genes = cpg.load_genes(sp)
+        genes = genes[genes.gene_id.isin(set(hits) | set(controls))]
+        V, gene_of = cpg.load_gene_cpgs(sp, genes, list(meta.index))
+        st = cpg.gene_stats(V, gene_of, E, meta, hits + controls, level)
+        st["group"] = ["hit"] * len(hits) + ["control"] * len(controls)
+        st["r_gene_meth"] = cg[f"r_{level}"].reindex(st.index).to_numpy()
+        st.to_csv(out / f"{sp}_genes.csv")
+        cut = cg.loc[hits, f"r_{level}"].abs().min()
+        h, c = st[(st.group == "hit") & (st.n_cpg > 0)], st[(st.group == "control") & (st.n_cpg > 0)]
+
+        def keeps(col):
+            return float(((h[col].abs() >= cut) & (np.sign(h[col]) == np.sign(h.r_cpg))).mean())
+
+        hv, cv = int((h.n_variant_like > 0).sum()), int((c.n_variant_like > 0).sum())
+        row = dict(
+            species=sp, n_samples=V.shape[1], n_hits=len(h), n_controls=len(c), r_cut=float(cut),
+            r_cpg_vs_gene_meth=float(np.corrcoef(h.r_cpg, h.r_gene_meth)[0, 1]),
+            median_cpg_hit=float(h.n_cpg.median()), median_cpg_control=float(c.n_cpg.median()),
+            frac_genes_variant_hit=hv / len(h), frac_genes_variant_control=cv / len(c),
+            p_variant=float(stats.fisher_exact([[hv, len(h) - hv], [cv, len(c) - cv]])[1]),
+            frac_cpgs_variant_hit=float(h.n_variant_like.sum() / h.n_cpg.sum()),
+            frac_cpgs_variant_control=float(c.n_variant_like.sum() / c.n_cpg.sum()),
+            hit_keeps_r_drop_variant=keeps("r_drop_variant"),
+            hit_keeps_r_drop_top=keeps("r_drop_top"),
+            hit_keeps_r_cpg=keeps("r_cpg"),
+            same_sign_hit=float(h.frac_same_sign.median()),
+            same_sign_control=float(c.frac_same_sign.median()),
+            p_same_sign=float(stats.mannwhitneyu(h.frac_same_sign.dropna(), c.frac_same_sign.dropna(),
+                                                 alternative="two-sided").pvalue),
+        )
+        summary.append(row)
+        print({k: (round(v, 3) if isinstance(v, float) else v) for k, v in row.items()}, flush=True)
+    pd.DataFrame(summary).to_csv(out / "summary.csv", index=False)
     _write_json(out / "run.json", {"args": vars(args)})
     print(f"Saved {out}")
