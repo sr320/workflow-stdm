@@ -135,8 +135,19 @@ In progress (2026-11-23):
   `results/centered-top2000-r2-nobatch`. The site component holds in
   *P. evermanni* and *P. tuahiniensis* and is absent in *A. pulchra*. The
   *A. pulchra* timepoint component is provisional.
-- Next: test component scores against physiology and ITS2, and overlap
-  with the calcification genes.
+- Physiology, ITS2 and calcification-gene tests done (`stdm interpret`,
+  `results/phase4`). No association holds within site x timepoint. The
+  *A. pulchra* timepoint component shares calcification's TP1/TP4 vs
+  TP2/TP3 split, and calcification genes are not enriched in either
+  component.
+
+Done (2026-11-23) apart from two questions for the lab: whether the dated
+RNA sample names mark extraction batches, and whether the near-zero TP1 and
+TP4 calcification values are real. Notes for phase 5:
+- The site component (*P. evermanni*, *P. tuahiniensis*) is the most solid
+  response to predict.
+- Colony-level variation beyond site and season is mostly sample-specific,
+  so expect modest prediction accuracy.
 
 ### 5. Elastic net
 - Predict component genes from miRNA, lncRNA and gene-body methylation,

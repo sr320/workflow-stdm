@@ -16,7 +16,8 @@ The roadmap is in [PLAN.md](PLAN.md).
 | 1. Data layer (`stdm fetch`, `stdm samples`, `stdm.mosaic`) | done |
 | 2. Tensor on real data (`stdm build-tensor`, `stdm.tensor`) | done |
 | 3. Barnacle sparse CP with rank and sparsity selection | done; see [Sparse CP](#sparse-cp) |
-| 4-6. Interpretation, elastic net, extensions | not started |
+| 4. Interpretation (`stdm interpret`) | done; see [Physiology, symbionts and calcification genes](#physiology-symbionts-and-calcification-genes) |
+| 5-6. Elastic net, extensions | not started |
 
 The `generate` / `decompose` / `run` / `info` commands and
 `SparseTensorDecomposer` are the original synthetic-data scaffold: plain
@@ -278,6 +279,41 @@ uv run stdm sparse-cp --tensor talk-centered --remove-batch --top-variable 2000 
   batch and timepoint are hard to separate in *A. pulchra*; treat this
   component as provisional.
 
+### Physiology, symbionts and calcification genes
+
+```bash
+uv run stdm interpret --model results/centered-top2000-r2-nobatch --output results/phase4
+```
+
+`interpret` rebuilds the model's tensor from its `run.json` and scores each
+sample on every component (projection onto the gene loadings). It then tests
+those scores within each species against 11 physiology traits and the ITS2
+profiles (Spearman, BH q). Each test is run three ways: on all samples,
+within site, and within site x timepoint. The last version rules out
+associations created only by a shared site or seasonal pattern. It also
+compares the top loadings with the 657 calcification-gene ortholog groups
+from the `*_biomin` files.
+
+- **Physiology:** 8 of 66 tests reach q < 0.1 on all samples or within site;
+  **none hold within site x timepoint** (all q > 0.3).
+  - The *A. pulchra* timepoint component tracks calcification rate in
+    *A. pulchra* (rho = 0.54) and *P. evermanni* (0.49). Calcification is
+    near zero at TP1 and TP4 and high at TP2 and TP3 in all three species,
+    the same split as the component. Within a timepoint, the correlation is
+    about 0.
+  - The site component tracks host biomass (rho = 0.50) and calcification
+    (−0.49) in *A. pulchra*, again only through shared timepoint structure.
+  - Seasonal calcification is measured on separate fragments from the RNA, so
+    its TP1/TP4 vs TP2/TP3 split is independent support that the timepoint
+    pattern is not only extraction batch. The near-zero TP1 and TP4 values
+    may also reflect a measurement difference; this needs checking with the
+    physiology team.
+- **ITS2:** no associations (0 of 12 tests at q < 0.1).
+- **Calcification genes:** 127 of the 657 groups are in the top 2,000
+  variable genes. They are not over-represented among the top 200 loadings
+  of either component (Fisher p ≥ 0.6). Their loadings lean slightly toward
+  the Manava side of the site component (rank-sum p = 0.04, uncorrected).
+
 **GO slim enrichment** (`goslim_enrichment.csv`; top 200 loadings of the 737
 annotated groups against the rest, Fisher test, BH q):
 
@@ -310,6 +346,7 @@ src/stdm/tensor.py      ortholog x colony x timepoint tensor
 src/stdm/barnacle/      vendored Barnacle sparse CP (masked fitting), factor match score
 src/stdm/selection.py   rank and sparsity selection
 src/stdm/reproduce.py   the talk's rank-35 model and published factors
+src/stdm/interpret.py   component scores vs physiology, ITS2 and gene sets
 src/stdm/cli.py         `stdm` command
 results/                run outputs (ignored)
 src/stdm/decomposition.py, data_loader.py   synthetic-data scaffold

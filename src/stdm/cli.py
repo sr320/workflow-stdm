@@ -421,6 +421,13 @@ def main():
     fit_parser.add_argument("--nonneg-modes", type=int, nargs="*", default=[0], help=nonneg_help)
     fit_parser.add_argument("--output", "-o", required=True)
 
+    int_parser = subparsers.add_parser(
+        "interpret", help="Relate a fitted model's components to physiology, ITS2 and calcification genes")
+    int_parser.add_argument("--model", required=True, help="Directory written by sparse-cp")
+    int_parser.add_argument("--output", "-o", required=True)
+    int_parser.add_argument("--top", type=int, default=200,
+                            help="Loadings per side compared with the calcification gene set")
+
     args = parser.parse_args()
 
     if args.command == "reproduce-talk":
@@ -433,6 +440,8 @@ def main():
         run_select_lambda(args)
     elif args.command == "sparse-cp":
         run_sparse_cp(args)
+    elif args.command == "interpret":
+        run_interpret(args)
     elif args.command == "build-tensor":
         run_build_tensor(args)
     elif args.command == "fetch":
@@ -947,3 +956,35 @@ def run_sparse_cp(args):
         "gene_zero_fraction": float((frames["gene"].to_numpy() == 0).mean())})
     np.savez(out / "losses.npz", *[np.asarray(l) for l in model.candidate_losses_])
     print(f"Saved {out}")
+
+
+def run_interpret(args):
+    """Rebuild the model's tensor from its run.json and test its components."""
+    import pandas as pd
+    from . import interpret
+    model = Path(args.model)
+    run = json.loads((model / "run.json").read_text())["args"]
+    t = _load_expression_tensor(run["tensor"], run.get("top_variable"), run.get("remove_batch", False))
+    genes = pd.read_csv(model / "gene_factors.csv", index_col=0)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    scores = interpret.sample_scores(t, genes)
+    scores.to_csv(out / "sample_scores.csv", index=False)
+    phys = interpret.load_physiology()[interpret.PHYSIOLOGY_VARS].apply(pd.to_numeric, errors="coerce")
+    tables = {
+        "physiology_associations": interpret.associate(scores, phys, genes.columns),
+        "its2_associations": interpret.associate(scores, interpret.load_its2(), genes.columns),
+        "calcification_overlap": interpret.gene_set_test(genes, interpret.calcification_groups(),
+                                                         top=args.top),
+    }
+    for name, df in tables.items():
+        df.to_csv(out / f"{name}.csv", index=False)
+    print(f"Saved {out}")
+    for name in ("physiology_associations", "its2_associations"):
+        df = tables[name]
+        hits = df[df[["q", "q_within_site", "q_within_site_tp"]].min(axis=1) < 0.1]
+        print(f"\n{name}: {len(hits)} of {len(df)} tests with any q < 0.1")
+        if len(hits):
+            print(hits.round(4).to_string(index=False))
+    print("\ncalcification_overlap:")
+    print(tables["calcification_overlap"].round(4).to_string(index=False))
