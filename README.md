@@ -58,7 +58,9 @@ mismatch means the upstream file changed and is reported as a warning
 
 `samples` writes [data/samples.csv](data/samples.csv): one row per
 colony x timepoint with species, colony, site, timepoint, month and a
-`has_<type>` flag per data type.
+`has_<type>` flag per data type, plus RNA extraction details and, when
+`multi_genotypes` is cached, `genotype_id` and `identity_flagged` (see
+[Sample identity](#sample-identity-genotypes-and-mix-ups)).
 
 ### Python API
 
@@ -566,7 +568,9 @@ from sequence differences between colonies.
 - **In *A. pulchra*, genotype contributes.** Variant-like CpGs are twice as
   common in hit genes as in matched controls, and about 30% of reproduced
   hits fall below |r| = 0.5 without them. There is no clear enrichment in
-  the other two species.
+  the other two species. **This did not hold up**: with one colony per
+  genotype the enrichment disappears (see
+  [Genotype-corrected rerun](#genotype-corrected-rerun)).
 - **What this rules out, and what it doesn't.** It rules out homozygous
   CpG-destroying mutations as the main explanation. It cannot rule out
   heterozygous variants, or genetic variants elsewhere that shift
@@ -581,6 +585,106 @@ from sequence differences between colonies.
 Outputs: `{species}_genes.csv` (per gene: group, CpG counts, `r_cpg`,
 `r_drop_variant`, `r_drop_top`, `frac_same_sign`, `r_gene_meth`) and
 `summary.csv`.
+
+## Sample identity: genotypes and mix-ups
+
+```bash
+uv run stdm fetch --key multi_genotypes
+uv run stdm samples
+```
+
+`multi_genotypes` is the sample-to-genotype table from SNP calls on the
+WGBS reads (timeseries_molecular script 58, pinned to commit `f6e99789`).
+It finds two problems with the colony labels:
+
+- **Clonemates (*A. pulchra*).** ACR-145 (Manava) and ACR-265 (Mahana) are
+  one genotype; ACR-150 (Manava) and ACR-237 (Mahana) are another. Ten
+  colonies are eight genotypes.
+- **Likely sample mix-ups (5 samples).** ACR-145-TP2 and ACR-150-TP2 carry
+  each other's genotype (a TP2 swap); POR-245-TP3 and TP4 match POR-236;
+  POC-57-TP4 matches POC-53.
+
+`samples.csv` gets `genotype_id` (each colony's genotype, from its unflagged
+samples) and `identity_flagged`. Every command that fits a tensor or tests
+colonies takes `--identity`:
+
+| Mode | Samples | What it does |
+|---|---|---|
+| `as-given` (default) | 117 | colony labels as recorded |
+| `drop-flagged` | 112 | drops the five mismatched samples |
+| `one-per-genotype` | 106 | also keeps one colony per genotype (ACR-265 and ACR-237, which have all four timepoints) |
+
+The genotype-corrected rerun below uses `one-per-genotype` throughout. In
+*P. evermanni* and *P. tuahiniensis* it is the same as `drop-flagged`.
+
+### Genotype-corrected rerun
+
+```bash
+uv run stdm sparse-cp --tensor talk-centered --remove-batch --identity one-per-genotype \
+    --top-variable 2000 --nonneg-modes --rank 2 --lambdas 0 0 0 --n-init 20 \
+    --max-iter 5000 --tol 1e-7 --output results/geno-r2-nobatch
+uv run stdm interpret --model results/geno-r2-nobatch --output results/phase4-geno
+uv run stdm elastic-net --scores results/phase4-geno/sample_scores.csv --component Component_2 \
+    --identity one-per-genotype --permutations 50 --output results/phase5-site-geno
+uv run stdm cis-meth --model results/geno-r2-nobatch --identity one-per-genotype \
+    --output results/phase5-cis-geno
+uv run stdm cpg-check --cis results/phase5-cis-geno --identity one-per-genotype \
+    --output results/phase5-cpg-geno
+```
+
+**Phase 4: unchanged.**
+
+- **Site component:** gene loadings have cosine 0.96 with the original model.
+  Its site difference holds with colonies as the unit (t-test on colony mean
+  scores, Manava vs Mahana): *P. evermanni* p = 2e-4 and *P. tuahiniensis*
+  p = 0.016, against 4e-4 and 0.008 before.
+- ***A. pulchra* timepoint component:** cosine 0.83, with the same pattern
+  (March and September up).
+- **Physiology:** 7 of 66 tests at q < 0.1, and none within site x
+  timepoint.
+
+**Gene-level methylation vs expression:**
+
+| | Apul before | Apul after | Peve before | Peve after | Ptua before | Ptua after |
+|---|---|---|---|---|---|---|
+| Samples | 40 | 32 | 37 | 35 | 32 | 31 |
+| Between colonies: genes above null 99th pct (null median) | 463 (80) | 307 (78) | 245 (66) | 229 (67) | 137 (44) | 120 (44) |
+| Between colonies: genes at q < 0.1 | 151 | 70 | 77 | 62 | 35 | 26 |
+| Within colony: genes above null 99th pct (null median) | 291 (76) | 194 (71) | 59 (69) | 61 (67) | 61 (45) | 60 (45) |
+| Within colony: genes at q < 0.1 | 12 | 0 | 1 | 0 | 0 | 0 |
+
+- **Between-colony coupling survives in all three species** (permutation
+  p = 0.005 each).
+  - Per-gene correlations agree with the original run: r = 0.92 (Apul),
+    0.98 (Peve), 0.99 (Ptua).
+  - Most of the new hits were hits before: 61 of 70, 55 of 62 and all 26.
+  - Fewer *A. pulchra* hits is expected with 8 colonies instead of 10.
+- **No single *A. pulchra* gene is coupled within colony any more.** The 12
+  genes from the original run depended on the swapped or cloned samples.
+  The excess over the null is smaller but still there (194 vs 71,
+  p = 0.025).
+
+**CpG genotype check:**
+
+| | Apul before | Apul after | Peve before | Peve after | Ptua before | Ptua after |
+|---|---|---|---|---|---|---|
+| Hits reproduced from CpG data | 68 | 43 | 16 | 14 | 26 | 19 |
+| ...still \|r\| ≥ 0.5 without variant-like CpGs | 47 | 36 | 13 | 12 | 20 | 14 |
+| ...still \|r\| ≥ 0.5 without the top CpG | 57 | 35 | 14 | 12 | 22 | 19 |
+| Variant-like CpGs, hits vs controls | 18.5% vs 9.3% | 9.6% vs 8.5% | 9.9% vs 7.8% | 8.5% vs 7.5% | 4.8% vs 4.6% | 6.1% vs 6.7% |
+| CpGs agreeing in sign, hits vs controls (median) | 0.74 vs 0.62 | 0.80 vs 0.65 (p < 0.001) | 0.85 vs 0.80 | 0.83 vs 0.78 | 0.68 vs 0.62 | 0.68 vs 0.63 |
+
+- **The *A. pulchra* enrichment of variant-like CpGs is gone** (9.6% vs
+  8.5%; genes with any such CpG 56% vs 45%, p = 0.16). The earlier
+  twofold excess came from the clone pairs. With each clone pair counted
+  twice, a variant shared by two colonies looked like a between-colony
+  effect twice over.
+- **Coupled genes still show a gene-wide shift.** Most hits survive
+  dropping variant-like CpGs or the single most influential CpG. More of
+  their CpGs agree in direction than in matched controls, clearly so in
+  *A. pulchra*.
+
+**Elastic net:** being rerun.
 
 ## Tests
 

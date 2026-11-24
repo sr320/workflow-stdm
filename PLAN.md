@@ -194,10 +194,24 @@ noise-injection stability selection; `results/phase5-site`.
   genotype contributes there. Heterozygous variants and broader genetic
   effects on methylation are not excluded.
 
+Genotype-corrected rerun (`--identity one-per-genotype`, using the WGBS
+SNP-based genotype table from timeseries_molecular script 58):
+- Five samples carry another colony's genotype (likely mix-ups) and two
+  *A. pulchra* pairs are clonemates. Dropping the five and keeping one
+  colony per genotype leaves 106 of 117 samples.
+- Phase 4 is unchanged: the site component reproduces (cosine 0.96) and
+  still separates sites in *P. evermanni* and *P. tuahiniensis*.
+- Between-colony methylation-expression coupling survives in all three
+  species (*A. pulchra* hits 151 to 70, with 8 colonies instead of 10).
+- The 12 *A. pulchra* within-colony genes and the *A. pulchra* enrichment
+  of variant-like CpGs both disappear: they came from the swapped and
+  cloned colonies.
+- Elastic net rerun in progress.
+
 Possible next steps:
-- Call genotypes from the WGBS reads (Biscuit or BS-SNPer) to test
-  heterozygous variants and cis genetic effects on methylation directly.
-  This needs the BAM files, which are not in the manifest.
+- Test heterozygous variants and cis genetic effects on methylation
+  directly with the SNP calls behind the genotype table (for example, drop
+  CpGs overlapping called SNPs).
 - Run the *A. pulchra* timepoint component (Component_1), keeping in mind it
   is provisional.
 
