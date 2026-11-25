@@ -136,6 +136,21 @@ class ExpressionTensor:
                                 {**self.params, "batch_removed": removed,
                                  "batch_protect": list(protect)})
 
+    def drop_samples(self, samples: Sequence[str], label: str = "dropped_samples") -> "ExpressionTensor":
+        """Mask the given samples (``PREFIX-colony-TPn``) as missing, and drop
+        colonies left with no observed sample. Species centring is not redone
+        here."""
+        values = self.values.copy()
+        drop = set(samples)
+        for j, c in enumerate(self.colonies.index):
+            for k, tp in enumerate(self.timepoints):
+                if f"{c}-TP{tp}" in drop:
+                    values[:, j, k] = np.nan
+        observed = ~np.isnan(values).all(axis=(0, 2))
+        done = sorted(s for s in drop if s.rsplit("-TP", 1)[0] in set(self.colonies.index))
+        return ExpressionTensor(values[:, observed], self.groups, self.colonies[observed],
+                                self.timepoints, {**self.params, label: done})
+
     def top_variable(self, n: int) -> "ExpressionTensor":
         """Keep the ``n`` groups with the highest within-species variance (original order)."""
         if n >= len(self.groups):

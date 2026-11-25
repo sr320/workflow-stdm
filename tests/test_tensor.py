@@ -226,3 +226,15 @@ def test_extraction_batch_from_sample_names():
     assert extraction_batch("20230123_ACR-225_TP1") == ("2023-01-23", "2023-01")
     assert extraction_batch("291-20220211") == ("2022-02-11", "2021-22")
     assert extraction_batch("527") == (None, "undated")
+
+
+def test_drop_samples_masks_and_drops_empty_colonies():
+    values = np.arange(2 * 3 * 2, dtype=float).reshape(2, 3, 2)
+    t = ExpressionTensor(values, pd.DataFrame(index=pd.Index(["g1", "g2"], name="group_id")),
+                         pd.DataFrame({"species": ["apul"] * 3, "site": ["A", "A", "B"]},
+                                      index=pd.Index(["ACR-1", "ACR-2", "ACR-3"], name="colony_id")),
+                         [1, 2])
+    d = t.drop_samples(["ACR-1-TP2", "ACR-3-TP1", "ACR-3-TP2", "POR-9-TP1"])
+    assert list(d.colonies.index) == ["ACR-1", "ACR-2"]
+    assert np.isnan(d.values[:, 0, 1]).all() and not np.isnan(d.values[:, 1]).any()
+    assert d.params["dropped_samples"] == ["ACR-1-TP2", "ACR-3-TP1", "ACR-3-TP2"]

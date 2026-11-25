@@ -328,6 +328,10 @@ def main():
                                help="Output directory (default: data/processed/tensor-<normalization>"
                                     "[-centered])")
 
+    IDENTITY_CHOICES = ["as-given", "drop-flagged", "one-per-genotype"]
+    identity_help = ("Sample identity: 'as-given' colony labels; 'drop-flagged' drops samples whose "
+                     "WGBS genotype differs from their colony; 'one-per-genotype' also keeps one "
+                     "colony per genotype (clonemates)")
     tensor_help = ("'talk' for the talk's VST matrix (missing samples masked), 'talk-centered' "
                    "for the same with each species' gene means removed, or a directory "
                    "written by build-tensor")
@@ -345,6 +349,8 @@ def main():
     rank_parser.add_argument("--remove-batch", action="store_true",
                              help="Remove RNA extraction batch effects within species, "
                              "protecting site and timepoint (before --top-variable)")
+    rank_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     rank_parser.add_argument("--top-variable", type=int, metavar="N",
                              help="Keep the N groups with the highest within-species variance")
     rank_parser.add_argument("--ranks", type=int, nargs="+",
@@ -365,6 +371,8 @@ def main():
     stab_parser.add_argument("--remove-batch", action="store_true",
                              help="Remove RNA extraction batch effects within species, "
                              "protecting site and timepoint (before --top-variable)")
+    stab_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     stab_parser.add_argument("--top-variable", type=int, metavar="N",
                              help="Keep the N groups with the highest within-species variance")
     stab_parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6, 8, 10])
@@ -387,6 +395,8 @@ def main():
     lam_parser.add_argument("--remove-batch", action="store_true",
                             help="Remove RNA extraction batch effects within species, "
                             "protecting site and timepoint (before --top-variable)")
+    lam_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     lam_parser.add_argument("--top-variable", type=int, metavar="N",
                             help="Keep the N groups with the highest within-species variance")
     lam_parser.add_argument("--rank", type=int, required=True)
@@ -408,6 +418,8 @@ def main():
     fit_parser.add_argument("--remove-batch", action="store_true",
                             help="Remove RNA extraction batch effects within species, "
                             "protecting site and timepoint (before --top-variable)")
+    fit_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     fit_parser.add_argument("--top-variable", type=int, metavar="N",
                             help="Keep the N groups with the highest within-species variance")
     fit_parser.add_argument("--rank", type=int, required=True)
@@ -446,6 +458,8 @@ def main():
     en_parser.add_argument("--permutations", type=int, default=50)
     en_parser.add_argument("--workers", type=int, help="Parallel permutations (default: cores - 1)")
     en_parser.add_argument("--seed", type=int, default=0)
+    en_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     en_parser.add_argument("--output", "-o", required=True)
 
     cis_parser = subparsers.add_parser(
@@ -458,6 +472,8 @@ def main():
                             help="Minimum methylation SD across samples (fraction scale)")
     cis_parser.add_argument("--permutations", type=int, default=200)
     cis_parser.add_argument("--seed", type=int, default=0)
+    cis_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     cis_parser.add_argument("--output", "-o", required=True)
 
     cpg_parser = subparsers.add_parser(
@@ -467,6 +483,8 @@ def main():
     cpg_parser.add_argument("--q", type=float, default=0.1, help="q cut-off for significant genes")
     cpg_parser.add_argument("--controls-per-hit", type=int, default=3)
     cpg_parser.add_argument("--seed", type=int, default=0)
+    cpg_parser.add_argument("--identity", default="as-given", choices=IDENTITY_CHOICES,
+                            help=identity_help)
     cpg_parser.add_argument("--output", "-o", required=True)
 
     args = parser.parse_args()
@@ -856,17 +874,23 @@ def run_build_tensor(args):
     print(f"  value range: {s['min']:.2f} to {s['max']:.2f}")
 
 
-def _load_expression_tensor(spec, top_variable=None, remove_batch=False):
+def _load_expression_tensor(spec, top_variable=None, remove_batch=False, identity="as-given"):
+    from . import mosaic
+    from .tensor import center_by_species
     t = _load_tensor_spec(spec)
+    meta = None
+    if identity != "as-given":
+        meta = mosaic.build_sample_metadata().set_index("sample_id")
+        keep = mosaic.identity_keep(meta, identity)
+        t = t.drop_samples(list(keep.index[~keep]), label="identity_dropped")
+        t.params["identity"] = identity
     if remove_batch:
-        from . import mosaic
-        meta = mosaic.build_sample_metadata()
+        meta = meta if meta is not None else mosaic.build_sample_metadata().set_index("sample_id")
         if "extraction_batch" not in meta:
             raise SystemExit("--remove-batch needs the RNA metadata: stdm fetch --key multi_rna_metadata")
-        t = t.remove_batch(meta.set_index("sample_id")["extraction_batch"])
-        if t.params.get("center") == "species":
-            from .tensor import center_by_species
-            t.values = center_by_species(t.values, t.colonies.species.to_numpy())
+        t = t.remove_batch(meta["extraction_batch"])
+    if (identity != "as-given" or remove_batch) and t.params.get("center") == "species":
+        t.values = center_by_species(t.values, t.colonies.species.to_numpy())
     return t.top_variable(top_variable) if top_variable else t
 
 
@@ -920,7 +944,7 @@ def run_reproduce_talk(args):
 
 def run_select_rank(args):
     from .selection import select_rank
-    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch, args.identity)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank(t.values, t.colonies.species.to_numpy(), args.ranks,
@@ -935,7 +959,7 @@ def run_select_rank(args):
 
 def run_select_rank_stability(args):
     from .selection import select_rank_stability
-    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch, args.identity)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rank, df = select_rank_stability(
@@ -956,7 +980,7 @@ def run_select_rank_stability(args):
 
 def run_select_lambda(args):
     from .selection import select_lambda
-    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch, args.identity)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     lam, df = select_lambda(t.values, t.colonies.species.to_numpy(), t.colonies.site.to_numpy(),
@@ -976,7 +1000,7 @@ def run_sparse_cp(args):
     import time
     from .barnacle import SparseCP
     from .reproduce import factors_to_frames
-    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch)
+    t = _load_expression_tensor(args.tensor, args.top_variable, args.remove_batch, args.identity)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     model = SparseCP(args.rank, args.lambdas, nonneg_modes=list(args.nonneg_modes),
@@ -1013,7 +1037,8 @@ def run_interpret(args):
     from . import interpret
     model = Path(args.model)
     run = json.loads((model / "run.json").read_text())["args"]
-    t = _load_expression_tensor(run["tensor"], run.get("top_variable"), run.get("remove_batch", False))
+    t = _load_expression_tensor(run["tensor"], run.get("top_variable"), run.get("remove_batch", False),
+                               run.get("identity", "as-given"))
     genes = pd.read_csv(model / "gene_factors.csv", index_col=0)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -1040,6 +1065,14 @@ def run_interpret(args):
 
 
 
+def _identity_keep(samples, identity):
+    """Boolean Series over ``samples``: kept under the identity mode (samples.csv)."""
+    import pandas as pd
+    from . import mosaic
+    meta = pd.read_csv(mosaic.default_data_dir() / "samples.csv").set_index("sample_id")
+    return mosaic.identity_keep(meta, identity).reindex(list(samples), fill_value=False)
+
+
 def run_elastic_net(args):
     """Colony-held-out elastic net for each species, predictor set and target."""
     import warnings
@@ -1049,6 +1082,7 @@ def run_elastic_net(args):
 
     warnings.filterwarnings("ignore", category=UserWarning, module="stdm.elasticnet")
     scores = pd.read_csv(args.scores).set_index("sample_id")
+    scores = scores[_identity_keep(scores.index, args.identity)]
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -1104,6 +1138,8 @@ def run_cis_meth(args):
     summary, sets_out = [], []
     for sp in args.species:
         E, M, meta = cis.load_pair(sp, min_meth_sd=args.min_meth_sd)
+        keep = _identity_keep(meta.index, args.identity)
+        E, M, meta = E.loc[:, keep.to_numpy()], M.loc[:, keep.to_numpy()], meta[keep.to_numpy()]
         genes, null = cis.cis_correlations(E, M, meta, permutations=args.permutations,
                                            seed=args.seed)
         genes.to_csv(out / f"{sp}_genes.csv")
@@ -1144,6 +1180,7 @@ def run_cpg_check(args):
             continue
         controls = cpg.matched_controls(cg, hits, level, args.controls_per_hit, seed=args.seed)
         E, _, meta = cis.load_pair(sp)
+        meta = meta[_identity_keep(meta.index, args.identity).to_numpy()]
         genes = cpg.load_genes(sp)
         genes = genes[genes.gene_id.isin(set(hits) | set(controls))]
         V, gene_of = cpg.load_gene_cpgs(sp, genes, list(meta.index))

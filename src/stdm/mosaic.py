@@ -450,4 +450,69 @@ def build_sample_metadata(data_dir: Optional[Path] = None,
         rna = load_rna_metadata(data_dir, manifest)
         meta = meta.join(rna[["plate", "rna_conc_ng_ul", "extraction_date", "extraction_batch"]],
                          on="sample_id")
+
+    geno_entry = manifest.get("multi_genotypes")
+    if geno_entry and raw_path(geno_entry, data_dir).exists():
+        meta = add_genotypes(meta, load_table("multi_genotypes", data_dir, manifest))
     return meta
+
+
+# ---------------------------------------------------------------------------
+# Genotype identity
+# ---------------------------------------------------------------------------
+
+IDENTITY_MODES = ("as-given", "drop-flagged", "one-per-genotype")
+
+
+def add_genotypes(meta: pd.DataFrame, geno: pd.DataFrame) -> pd.DataFrame:
+    """Add ``genotype_id`` and ``identity_flagged`` to sample metadata.
+
+    ``geno`` is the WGBS-based sample-to-genotype table (``sample``,
+    ``colony``, ``genotype``, ``flagged``). A sample is flagged when its own
+    genotype differs from its colony's (a likely sample mix-up). Each colony's
+    genotype is the most common genotype among its unflagged samples, and is
+    given to all its samples, including those without WGBS. Colonies with no
+    genotyped sample keep their colony ID as genotype.
+    """
+    g = geno.assign(sample=geno["sample"].map(canonical_sample_id),
+                    flagged=geno["flagged"].astype(str).str.upper() == "TRUE")
+    ok = g[~g.flagged]
+    colony_geno = ok.groupby("colony")["genotype"].agg(lambda s: s.mode().iloc[0])
+    out = meta.copy()
+    out["genotype_id"] = out["colony_id"].map(colony_geno).fillna(out["colony_id"])
+    out["identity_flagged"] = out["sample_id"].isin(set(g.loc[g.flagged, "sample"]))
+    return out
+
+
+def identity_keep(meta: pd.DataFrame, mode: str = "as-given") -> pd.Series:
+    """Boolean per sample: keep it under the identity ``mode``.
+
+    - ``as-given``: keep everything (colony labels as recorded).
+    - ``drop-flagged``: drop samples whose genotype differs from their colony.
+    - ``one-per-genotype``: also keep only one colony per genotype (the one
+      with the most remaining samples; ties go to the lower colony number), so
+      clonemates are not counted as independent colonies.
+
+    ``meta`` is indexed by sample ID with ``colony_id``, and, for the last
+    two modes, ``identity_flagged`` and ``genotype_id`` (from
+    :func:`add_genotypes`; run ``stdm fetch --key multi_genotypes`` then
+    ``stdm samples``).
+    """
+    if mode not in IDENTITY_MODES:
+        raise ValueError(f"identity mode must be one of {IDENTITY_MODES}")
+    keep = pd.Series(True, index=meta.index)
+    if mode == "as-given":
+        return keep
+    if "identity_flagged" not in meta:
+        raise ValueError("sample metadata has no genotype columns; "
+                         "run `stdm fetch --key multi_genotypes` and `stdm samples`")
+    keep &= ~meta["identity_flagged"].astype(bool)
+    if mode == "one-per-genotype":
+        kept = meta[keep]
+        n = kept.groupby("colony_id").size()
+        order = pd.DataFrame({"n": n, "num": [int(c.rsplit("-", 1)[1]) for c in n.index],
+                              "genotype": kept.groupby("colony_id")["genotype_id"].first()})
+        order = order.sort_values(["n", "num"], ascending=[False, True])
+        chosen = set(order.groupby("genotype").head(1).index)
+        keep &= meta["colony_id"].isin(chosen)
+    return keep

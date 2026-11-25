@@ -243,3 +243,24 @@ def test_real_orthologs_match_gene_matrices():
     for sp, min_frac in [("apul", 0.95), ("peve", 0.999), ("ptua", 0.999)]:
         genes, _ = mosaic.load_matrix(f"{sp}_gene", REPO_DATA)
         assert o[sp].dropna().isin(genes.index).mean() >= min_frac
+
+
+def test_genotypes_and_identity_modes():
+    meta = pd.DataFrame({"sample_id": [f"ACR-{c}-TP{t}" for c in (1, 2, 3) for t in (1, 2)],
+                         "colony_id": [f"ACR-{c}" for c in (1, 2, 3) for _ in (1, 2)]})
+    geno = pd.DataFrame({
+        "sample": ["ACR-1-TP1", "ACR-1-TP2", "ACR-2-TP1", "ACR-2-TP2", "ACR-3-TP1"],
+        "colony": ["ACR-1", "ACR-1", "ACR-2", "ACR-2", "ACR-3"],
+        # ACR-1 and ACR-2 are clonemates; ACR-2-TP2 is a mix-up.
+        "genotype": ["G1", "G1", "G1", "G9", "G2"],
+        "flagged": ["FALSE", "FALSE", "FALSE", "TRUE", "FALSE"]})
+    m = mosaic.add_genotypes(meta, geno).set_index("sample_id")
+    assert list(m.genotype_id) == ["G1", "G1", "G1", "G1", "G2", "G2"]  # ACR-3-TP2 has no WGBS
+    assert m.identity_flagged.sum() == 1 and m.identity_flagged["ACR-2-TP2"]
+    assert mosaic.identity_keep(m, "as-given").all()
+    assert list(m.index[~mosaic.identity_keep(m, "drop-flagged")]) == ["ACR-2-TP2"]
+    keep = mosaic.identity_keep(m, "one-per-genotype")
+    # ACR-1 keeps more samples than ACR-2 after the flag, so it represents G1.
+    assert sorted(m[keep].colony_id.unique()) == ["ACR-1", "ACR-3"]
+    with pytest.raises(ValueError):
+        mosaic.identity_keep(m, "bogus")
